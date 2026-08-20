@@ -1,0 +1,80 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 20849,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    },
+    {
+      "tag": "http-in",
+      "listen": "127.0.0.1",
+      "port": 20850,
+      "protocol": "http",
+      "settings": {}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "203.0.113.20",
+            "port": 443,
+            "users": [
+              {
+                "id": "4f55dbcc-04d2-5885-8b75-eb7d7f9df625",
+                "encryption": "none",
+                "email": "win178-149"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "sockopt": {
+          "tcpKeepAliveIdle": 15,
+          "tcpKeepAliveInterval": 10
+        },
+        "xhttpSettings": {
+          "path": "/ru-feed/api/v3",
+          "mode": "stream-one"
+        },
+        "realitySettings": {
+          "serverName": "www.example.org",
+          "fingerprint": "chrome",
+          "publicKey": "sHvucRnOYykOSMfMp8Ou817zgGAAhrBvPTQ4JChC6Dc",
+          "shortId": "08080808",
+          "spiderX": ""
+        }
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "::/0"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

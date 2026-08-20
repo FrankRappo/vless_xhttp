@@ -1,0 +1,15 @@
+[Unit]
+Description=Xray isolated egress to exit 149 through server 104
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xray run -c /usr/local/etc/xray/egress/egress-149.json
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

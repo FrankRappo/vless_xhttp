@@ -1,0 +1,1 @@
+vless://5d1ed2fb-0afd-5f2a-a3d0-bf17e5e4b4f6@203.0.113.10:443?security=reality&sni=vpn.example.com&fp=chrome&pbk=4k6nwJzR1r6XU8SLjDvCtSxDiIZt2gniTCwTbax5fEA&sid=05050505&type=xhttp&path=%2Fnews-api%2Fv2&mode=stream-one&encryption=none#client-20

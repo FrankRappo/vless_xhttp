@@ -1,0 +1,76 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "dns": {
+    "queryStrategy": "UseIPv4"
+  },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 11043,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "203.0.113.10",
+            "port": 443,
+            "users": [
+              {
+                "id": "eafe4941-6ae7-58ac-b2cf-6c64cfae47fc",
+                "encryption": "none",
+                "email": "exit149-2"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "sockopt": {
+          "tcpKeepAliveIdle": 15,
+          "tcpKeepAliveInterval": 10
+        },
+        "xhttpSettings": {
+          "path": "/news-api/v2",
+          "mode": "stream-one"
+        },
+        "realitySettings": {
+          "serverName": "vpn.example.com",
+          "fingerprint": "chrome",
+          "publicKey": "4k6nwJzR1r6XU8SLjDvCtSxDiIZt2gniTCwTbax5fEA",
+          "shortId": "01010101",
+          "spiderX": ""
+        }
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "::/0"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 10808,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "vpn.example.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "e04cf682-507f-55ba-89c9-45446c2d3e6a",
+                "encryption": "none",
+                "email": "client1"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "xhttpSettings": {
+          "path": "/news-api/v2",
+          "mode": "stream-one"
+        },
+        "realitySettings": {
+          "serverName": "vpn.example.com",
+          "fingerprint": "chrome",
+          "publicKey": "4k6nwJzR1r6XU8SLjDvCtSxDiIZt2gniTCwTbax5fEA",
+          "shortId": "01010101",
+          "spiderX": ""
+        }
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "::/0"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

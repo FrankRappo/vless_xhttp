@@ -1,0 +1,6 @@
+[Service]
+Group=nogroup
+Restart=always
+RestartSec=2s
+ExecStartPre=+/usr/bin/chown root:nogroup /usr/local/etc/xray/config.json
+ExecStartPre=+/usr/bin/chmod 0640 /usr/local/etc/xray/config.json

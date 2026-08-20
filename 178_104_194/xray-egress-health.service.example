@@ -1,0 +1,7 @@
+[Unit]
+Description=Health check isolated Xray egress routes
+After=xray-egress-194.service xray-egress-130.service xray-egress-149.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/xray-egress-health

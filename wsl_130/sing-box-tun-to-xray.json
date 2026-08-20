@@ -1,0 +1,82 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "tun-vless130",
+      "address": [
+        "172.19.130.1/30"
+      ],
+      "mtu": 9000,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "xray-socks",
+      "server": "127.0.0.1",
+      "server_port": 10808,
+      "version": "5"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "xray-socks",
+    "rules": [
+      {
+        "port": 53,
+        "network": [
+          "tcp",
+          "udp"
+        ],
+        "action": "hijack-dns"
+      },
+      {
+        "ip_cidr": [
+          "203.0.113.10/32"
+        ],
+        "outbound": "direct"
+      }
+    ]
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "google-doh-via-130",
+        "server": "8.8.8.8",
+        "server_port": 443,
+        "path": "/dns-query",
+        "detour": "xray-socks",
+        "tls": {
+          "enabled": true,
+          "server_name": "dns.google"
+        }
+      }
+    ],
+    "rules": [
+      {
+        "action": "route",
+        "server": "google-doh-via-130"
+      }
+    ],
+    "final": "google-doh-via-130",
+    "strategy": "ipv4_only",
+    "cache_capacity": 4096
+  }
+}

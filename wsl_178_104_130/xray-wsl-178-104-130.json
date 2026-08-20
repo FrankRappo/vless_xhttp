@@ -1,0 +1,92 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 10810,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "203.0.113.20",
+            "port": 443,
+            "users": [
+              {
+                "id": "f40be876-3edc-5aae-a50b-ecd742ee9722",
+                "encryption": "none",
+                "email": "wsl178-130"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "xhttpSettings": {
+          "path": "/ru-feed/api/v3",
+          "mode": "stream-one"
+        },
+        "realitySettings": {
+          "serverName": "www.example.org",
+          "fingerprint": "chrome",
+          "publicKey": "sHvucRnOYykOSMfMp8Ou817zgGAAhrBvPTQ4JChC6Dc",
+          "shortId": "08080808",
+          "spiderX": ""
+        },
+        "sockopt": {
+          "tcpKeepAliveIdle": 15,
+          "tcpKeepAliveInterval": 10,
+          "dialerProxy": "fragment"
+        }
+      }
+    },
+    {
+      "tag": "fragment",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIPv4",
+        "fragment": {
+          "packets": "tlshello",
+          "length": "50-100",
+          "interval": "1-3"
+        }
+      },
+      "streamSettings": {
+        "sockopt": {
+          "interface": "eth0",
+          "tcpNoDelay": true
+        }
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "::/0"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}
