@@ -1,6 +1,6 @@
 # Операционные заметки (доступ, Aeza vs 104, killswitch)
 
-Дата актуализации: 2026-08-18. Дополняет `README.md` / `AUDIT.md`.
+Дата актуализации: 2026-08-20. Дополняет `README.md` / `AUDIT.md`.
 
 ---
 
@@ -10,7 +10,7 @@
 |--------|--------------|
 | **Entry 104** `203.0.113.10` | **Прямой SSH из РФ-сети ресетится DPI на kex** (`kex_exchange_identification: Connection reset`). Заходить **джампом через Aeza**. |
 | **Exit Server2** `203.0.113.30:56777` | Снаружи `:56777` закрыт. Только через 104 по ключу `/root/.ssh/tunnel_key`. |
-| **Server 130** `198.51.100.130` | Только для цепочки client1/WSL. К остальным клиентам отношения не имеет. |
+| **Server 130** `198.51.100.130` | Администрирование через entry по private WireGuard: с entry `ssh root@10.0.3.1`. Пароль не публикуется. |
 
 Реквизиты (пароли/ключи) — в `AUDIT.md` («Серверы и доступы»).
 
@@ -25,6 +25,14 @@ sshpass -e ssh \
 ```bash
 ssh root@203.0.113.10 'ssh -i /root/.ssh/tunnel_key -p 56777 root@203.0.113.30 "hostname"'
 ```
+
+**На Server 130 — через private WireGuard-hop entry:**
+```bash
+# 1. Зайти на entry через relay командой выше.
+# 2. Уже на entry:
+ssh root@10.0.3.1
+```
+Используйте отдельный пароль из приватного хранилища; в public repository его быть не должно.
 
 ---
 
@@ -181,3 +189,70 @@ jq -c '.routing.rules[]?' /etc/xray/config.json
 ### 4.5 Logrotate access-лога
 
 `/etc/logrotate.d/xray`: `copytruncate` (без рестарта xray), `daily`/`rotate 14`/`compress`/`delaycompress`/`dateext`/`su root root` (т.к. `/var/log`=`root:syslog 775`). Ручная ротация: `logrotate -f /etc/logrotate.d/xray`. Лог-аналитика (`tail`, runbook выше) переживает ротацию.
+
+
+---
+
+## 6. Ресурсная защита и автоматическая очистка логов (2026-08-20)
+
+Автоочистка использует штатный `logrotate.timer`, а не постоянно работающий
+watchdog. Таймер запускает короткий процесс раз в сутки, поэтому постоянного
+расхода RAM нет. Проверка на каждом узле:
+
+```bash
+systemctl is-enabled logrotate.timer
+systemctl is-active logrotate.timer
+systemctl list-timers logrotate.timer --no-pager
+```
+
+### Entry 104
+
+- Создан `/swapfile` размером 1 ГБ, включён через `/etc/fstab`;
+- `vm.swappiness=10` закреплён в `/etc/sysctl.d/99-vpn-memory.conf`;
+- journal ограничен файлом `/etc/systemd/journald.conf.d/99-vpn-retention.conf`:
+  `SystemMaxUse=300M`, `SystemKeepFree=2G`, `RuntimeMaxUse=100M`, хранение до 14 дней;
+- после применения journal уменьшился с 1.4 ГБ до ~199 МБ;
+- Xray и nginx остались active, `NRestarts=0`.
+
+Проверка:
+
+```bash
+swapon --show
+free -h
+sysctl vm.swappiness
+journalctl --disk-usage
+systemctl show xray -p ActiveState -p SubState -p NRestarts
+```
+
+### Exit 194
+
+- В `/usr/local/etc/xray/config.json` уровень Xray изменён `debug → warning`;
+- `/etc/logrotate.d/xray-access` обслуживает `/var/log/xray-access.log`:
+  `daily`, `rotate 7`, `maxsize 50M`, `compress`, `copytruncate`;
+- syslog продолжает штатную ротацию `/etc/logrotate.d/rsyslog`: `weekly`, `rotate 4`;
+- `/var/log` уменьшен с 3.3 до 1.3 ГБ, заполнение корня — с 35% до 24%;
+- ротация выполняется без постоянного процесса и без дополнительного расхода RAM.
+
+### Exit 130
+
+- Штатный вход: `178 → 104 → ssh root@10.0.3.1`;
+- `/etc/logrotate.d/xray-104` обслуживает access/error Xray:
+  `daily`, `rotate 7`, `maxsize 25M`, `compress`, `copytruncate`, `su root root`;
+- в `/etc/logrotate.d/btmp` добавлен `su root utmp`, иначе logrotate пропускал файл
+  из-за групповых прав `/var/log`;
+- journal ограничен до 50 МБ и семи дней файлом
+  `/etc/systemd/journald.conf.d/99-vpn-retention.conf`;
+- `/var/log` уменьшен с 452 до 198 МБ, корень — с 82% до 79%;
+- Xray/OpenVPN/WireGuard остались active, `NRestarts=0`.
+
+Проверка и безопасный ручной запуск:
+
+```bash
+logrotate -d /etc/logrotate.d/xray-access   # 194, только проверка
+logrotate -d /etc/logrotate.d/xray-104      # 130, только проверка
+journalctl --disk-usage
+systemctl is-active xray logrotate.timer
+```
+
+Не удалять активные логи через `rm`: для Xray используется `copytruncate`, чтобы
+процесс продолжал писать в тот же inode без рестарта.

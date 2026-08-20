@@ -1,4 +1,4 @@
-# Полный аудит конфигурации (актуализирован 2026-08-18)
+# Полный аудит конфигурации (актуализирован 2026-08-20)
 
 Этот файл — финальный чек-лист **реального состояния серверов** для воспроизведения после disaster recovery.
 
@@ -15,8 +15,10 @@
 | **Server2 root** | `ssh -p 56777 root@203.0.113.30` пароль `<REDACTED_PASSWORD>` |
 | **Exit 149 root** (добавлен 2026-07-24) | `ssh root@203.0.113.40` пароль `<REDACTED_PASSWORD>` (порт 22). Vultr, Debian 12. Exit для профиля `exit149`, см. `FULL_SETUP_104_149_EXIT149.md` |
 | **Aeza root / China relay** | `ssh root@203.0.113.20` пароль `<REDACTED_PASSWORD>`. С 2026-08-18: первый VPN-hop из Китая и jump-хост к 104. Старые туннели Aeza→Server2 остаются демонтированы; независимые сервисы `tg-gemma-bot`, `llm-srv1-forward`, anydesk/x11vnc/rudesktop сохраняются — **сервер гасить нельзя** |
+| **Exit 130 root** | Штатный админ-путь: сначала entry через relay, затем `ssh root@10.0.3.1` по private WireGuard; пароль `<REDACTED_PASSWORD>`. Public example: `198.51.100.130:22`. |
 
 > **Доступ по SSH (2026-06-01):** прямой SSH из РФ-сети на 104 часто ресетится DPI на kex — заходить джампом через Aeza: `ssh -o ProxyCommand="ssh -W %h:%p root@203.0.113.20" root@203.0.113.10`. Server2 — только через 104 по `tunnel_key` на порт 56777 (снаружи :56777 закрыт).
+> **Доступ к exit 130:** relay → entry → private WireGuard; уже находясь на entry, выполнять `ssh root@10.0.3.1`. Используйте отдельный непубликуемый пароль.
 
 ---
 
