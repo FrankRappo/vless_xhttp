@@ -7,14 +7,15 @@
 
 
 **Дата ввода в эксплуатацию:** 2026-05-22
-**Основной вход:** 203.0.113.10; для Китая с 2026-08-18 используется дополнительный entry-hop 203.0.113.20.
-**Операционные заметки:** [`OPERATIONS.md`](./OPERATIONS.md) — SSH-доступ, China relay 178, killswitch на 104
-**Профили China relay:** [`178_104_194/README.md`](./178_104_194/README.md) — Windows/iPhone/Android
-**Windows с exit 149 через China relay:** [`178_104_194/windows-178-104-149.txt`](./178_104_194/windows-178-104-149.txt) — Windows → 178 → 104 → 149; схема в [`wsl_149/README.md`](./wsl_149/README.md)
+**Основной вход:** 203.0.113.10; для внешних клиентов с 2026-08-18 используется дополнительный entry-hop 203.0.113.20.
+**Операционные заметки:** [`OPERATIONS.md`](./OPERATIONS.md) — SSH-доступ, entry relay 178, killswitch на 104
+**Профили entry relay:** [`178_104_194/README.md`](./178_104_194/README.md) — Windows/iPhone/Android
+**Windows с exit 149 через entry relay:** [`178_104_194/windows-178-104-149.txt`](./178_104_194/windows-178-104-149.txt) — Windows → 178 → 104 → 149; схема в [`wsl_149/README.md`](./wsl_149/README.md)
 **Полная фиксация:** [`FULL_SETUP_178_104_194.md`](./FULL_SETUP_178_104_194.md) — серверы, cleanup, проверки и операции
 **Будущие улучшения iPhone:** [`178_104_194/IPHONE_IMPROVEMENTS.md`](./178_104_194/IPHONE_IMPROVEMENTS.md) — пока не применены
-**WSL-профиль через China relay:** [`wsl_178_104_130/README.md`](./wsl_178_104_130/README.md) — подготовлен, но после инцидента выполнен rollback на рабочий WSL → 104 → 130
+**WSL-профиль через entry relay:** [`wsl_178_104_130/README.md`](./wsl_178_104_130/README.md) — подготовлен, но после инцидента выполнен rollback на рабочий WSL → 104 → 130
 **Изоляция egress 178:** [`178_104_194/EGRESS_ISOLATION.md`](./178_104_194/EGRESS_ISOLATION.md) — независимые процессы 194/130/149 и быстрый health-check
+**Автовосстановление inbound 178:** [`178_104_194/ENTRY_HEALTH.md`](./178_104_194/ENTRY_HEALTH.md) — двойная проверка `packet-up`/`stream-one`, restart guard и rollback
 **Временный файлообменник:** [`FILE_HOSTING.md`](./FILE_HOSTING.md) — раздача файла клиенту по скрытой ссылке на `vpn.example.com` с авто-сгоранием
 
 ---
@@ -61,7 +62,7 @@
                   Internet (exit IP 203.0.113.30)
 ```
 
-Для клиентов в Китае перед этой неизменённой production-цепочкой добавлен entry-hop:
+Для внешних клиентов перед этой неизменённой production-цепочкой добавлен entry-hop:
 
 ```text
 Windows/Android -- XHTTP stream-one --┐
@@ -103,12 +104,12 @@ iPhone         -- XHTTP packet-up  ---┴→ 203.0.113.20:443
 | SSH | root / `<REDACTED_PASSWORD>` (порт 22) |
 | Ресурсы | 1 vCPU / 1 GB RAM / 25 GB disk |
 
-### China entry relay: Aeza
+### Entry relay: Aeza
 
 | Параметр | Значение |
 |----------|----------|
 | IPv4 | `203.0.113.20` |
-| Назначение | Первый hop из Китая + SSH jump к 104 |
+| Назначение | Первый внешний hop + SSH jump к 104 |
 | Inbound | VLESS + Reality + XHTTP `mode=auto`, `:443` |
 | Main routing outbounds | SOCKS `127.0.0.1:11041` → `xray-egress-194.service`; `11042` → `xray-egress-130.service`; `11043` → `xray-egress-149.service` |
 | Старый профиль | Удалён; старый прямой линк 178→194 не восстановлен |
@@ -335,7 +336,7 @@ certbot renew --dry-run
 
 ### 2026-08-18
 - **Подготовлен и успешно испытан WSL-профиль `WSL → 178 → 104 → 130`.** Linux Reality ClientHello проходил только после клиентской `freedom.fragment` (`packets=tlshello`, `length=50-100`, `interval=1-3`) через `dialerProxy=fragment`. После последующего инцидента выполнен rollback на прежний маршрут WSL → 104 → 130; профиль и supervisor сохранены как кандидат. Полное описание — [`wsl_178_104_130/README.md`](./wsl_178_104_130/README.md).
-- Добавлена China-цепочка `устройство → 178 → 104 → tunnel-1…10 → 194` без замены и рестарта действующего инбаунда 104.
+- Добавлена входная цепочка `устройство → 178 → 104 → tunnel-1…10 → 194` без замены и рестарта действующего инбаунда 104.
 - На 104 через API добавлен один обычный клиент `relay178-test`; отдельного правила у него нет, поэтому он проходит через штатный catch-all. По access-логу подтверждено распределение по всем `tunnel-1…10`; `balancer-leak-check`: `pool=ok`, утечки `0`.
 - На 178 старый нерабочий Xray-профиль и старые tunnel-компоненты удалены. Новый `:443`: Reality + XHTTP `mode=auto`, маскировка `www.example.org`, outbound до 104 — XHTTP `stream-one`. Старый прямой линк 178→194 не возвращался.
 - Добавлены три отдельных профиля [`178_104_194/`](./178_104_194/): Windows и Android используют проверенный `stream-one`, iPhone — специальный `packet-up` для восстановления после фона/смены сети.

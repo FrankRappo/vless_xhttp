@@ -14,7 +14,7 @@
 | **New VPS root** | `ssh root@203.0.113.10` пароль `<REDACTED_PASSWORD>` (порт 22) |
 | **Server2 root** | `ssh -p 56777 root@203.0.113.30` пароль `<REDACTED_PASSWORD>` |
 | **Exit 149 root** (добавлен 2026-07-24) | `ssh root@203.0.113.40` пароль `<REDACTED_PASSWORD>` (порт 22). Vultr, Debian 12. Exit для профиля `exit149`, см. `FULL_SETUP_104_149_EXIT149.md` |
-| **Aeza root / China relay** | `ssh root@203.0.113.20` пароль `<REDACTED_PASSWORD>`. С 2026-08-18: первый VPN-hop из Китая и jump-хост к 104. Старые туннели Aeza→Server2 остаются демонтированы; независимые сервисы `tg-gemma-bot`, `llm-srv1-forward`, anydesk/x11vnc/rudesktop сохраняются — **сервер гасить нельзя** |
+| **Aeza root / entry relay** | `ssh root@203.0.113.20` пароль `<REDACTED_PASSWORD>`. С 2026-08-18: первый внешний VPN-hop и jump-хост к 104. Старые туннели Aeza→Server2 остаются демонтированы; независимые сервисы `tg-gemma-bot`, `llm-srv1-forward`, anydesk/x11vnc/rudesktop сохраняются — **сервер гасить нельзя** |
 | **Exit 130 root** | Штатный админ-путь: сначала entry через relay, затем `ssh root@10.0.3.1` по private WireGuard; пароль `<REDACTED_PASSWORD>`. Public example: `198.51.100.130:22`. |
 
 > **Доступ по SSH (2026-06-01):** прямой SSH из РФ-сети на 104 часто ресетится DPI на kex — заходить джампом через Aeza: `ssh -o ProxyCommand="ssh -W %h:%p root@203.0.113.20" root@203.0.113.10`. Server2 — только через 104 по `tunnel_key` на порт 56777 (снаружи :56777 закрыт).
@@ -180,7 +180,7 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDUMMY_PUBLIC_KEY_REPLACE_ME tunnel-from-new
 ### Демонтаж линка Aeza↔Server2 (2026-06-01)
 
 Связка 178↔194 была мёртвым балластом (через Aeza клиентов 0, xray access.log пуст с февраля). Демонтировано:
-- На Aeza: старые 10 `ssh-forward*` и `tunnel-cleanup` удалены. Новый China relay: `in-cn-xhttp` на `:443`, Reality+XHTTP `mode=auto`, пять клиентов (`win178-test`, `iphone178`, `android178`, `wsl178-130`, `win178-149`). Основной Xray передаёт `out-104-relay` локальному `xray-egress-194.service` на `127.0.0.1:11041`, `out-104-130` — `xray-egress-130.service` на `127.0.0.1:11042`, а `out-104-149` — `xray-egress-149.service` на `127.0.0.1:11043`. Watchdog проверяет ветки каждые 10 секунд и перезапускает только неисправную. Это **не** восстановление прямого линка 178→194.
+- На Aeza: старые 10 `ssh-forward*` и `tunnel-cleanup` удалены. Новый entry relay: `in-cn-xhttp` на `:443`, Reality+XHTTP `mode=auto`, пять клиентов (`win178-test`, `iphone178`, `android178`, `wsl178-130`, `win178-149`). Основной Xray передаёт `out-104-relay` локальному `xray-egress-194.service` на `127.0.0.1:11041`, `out-104-130` — `xray-egress-130.service` на `127.0.0.1:11042`, а `out-104-149` — `xray-egress-149.service` на `127.0.0.1:11043`. Watchdog проверяет ветки каждые 10 секунд и перезапускает только неисправную. Это **не** восстановление прямого линка 178→194.
 - На Server2: удалён ключ Aeza (выше). Established от 178 → 0; путь через 104 не затронут.
 
 ### Server2 — слушающие порты (2026-06-01)

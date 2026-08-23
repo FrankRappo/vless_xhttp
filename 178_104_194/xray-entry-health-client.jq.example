@@ -1,0 +1,39 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [{
+    "tag": "health-socks",
+    "listen": "127.0.0.1",
+    "port": 11996,
+    "protocol": "socks",
+    "settings": {"auth": "noauth", "udp": false}
+  }],
+  "outbounds": [
+    {
+      "tag": "health-proxy",
+      "protocol": "vless",
+      "settings": {"vnext": [{
+        "address": "127.0.0.1",
+        "port": 443,
+        "users": [{
+          "id": $uuid,
+          "encryption": "none",
+          "email": "entry-health-client"
+        }]
+      }]},
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "xhttpSettings": {"path": $path, "mode": $mode},
+        "realitySettings": {
+          "serverName": $sni,
+          "fingerprint": "chrome",
+          "password": $password,
+          "shortId": $sid,
+          "spiderX": ""
+        }
+      }
+    },
+    {"tag": "health-block", "protocol": "blackhole"}
+  ],
+  "routing": {"domainStrategy": "AsIs", "rules": []}
+}

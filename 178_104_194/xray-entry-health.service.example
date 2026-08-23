@@ -1,0 +1,11 @@
+[Unit]
+Description=Probe and recover Xray REALITY/XHTTP entry
+After=xray.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/xray-entry-health
+TimeoutStartSec=45s
+Nice=10
+IOSchedulingClass=idle

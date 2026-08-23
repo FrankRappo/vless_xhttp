@@ -1,0 +1,38 @@
+(.inbounds[] | select(.tag == "in-cn-xhttp") | .settings.clients) |=
+  (if any(.[]; .email == "entry-health") then .
+   else . + [{"id": $uuid, "email": "entry-health"}]
+   end)
+| .outbounds |=
+  (if any(.[]; .tag == "entry-health-direct") then .
+   else . + [{
+     "tag": "entry-health-direct",
+     "protocol": "freedom",
+     "settings": {"domainStrategy": "UseIPv4"}
+   }]
+   end)
+| .routing.rules |=
+  ([.[] | select(
+      (.ruleTag // "") != "entry-health-loopback"
+      and (.ruleTag // "") != "entry-health-block"
+    )] as $rules
+   | [
+       $rules[0],
+       {
+         "type": "field",
+         "inboundTag": ["in-cn-xhttp"],
+         "user": ["entry-health"],
+         "ip": ["127.0.0.1/32"],
+         "port": "18999",
+         "network": "tcp",
+         "outboundTag": "entry-health-direct",
+         "ruleTag": "entry-health-loopback"
+       },
+       {
+         "type": "field",
+         "inboundTag": ["in-cn-xhttp"],
+         "user": ["entry-health"],
+         "network": "tcp,udp",
+         "outboundTag": "block",
+         "ruleTag": "entry-health-block"
+       }
+     ] + $rules[1:])
