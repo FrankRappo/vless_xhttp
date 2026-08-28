@@ -45,12 +45,6 @@
           "udp"
         ],
         "action": "hijack-dns"
-      },
-      {
-        "ip_cidr": [
-          "203.0.113.20/32"
-        ],
-        "outbound": "direct"
       }
     ]
   },

@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-D='/work/vpn/vless_xhttp/wsl_178_104_130'
+D='/opt/vless_xhttp/wsl_178_104_130'
 XRAY_CONFIG="$D/xray-wsl-178-104-130.json"
 SING_CONFIG="$D/sing-box-tun-178-104-130.json"
 XRAY_PID='/run/xray-vless178130.pid'
@@ -14,9 +14,18 @@ STATE='/run/vless178130-switch.state'
 LOCK='/run/vless178130-recovery.lock'
 EXPECTED='198.51.100.130'
 TOUCHED=0
+PROFILE_DIR='/etc/vless-wsl'
+PROFILE_FILE="$PROFILE_DIR/profile"
+PROFILE_LOCK='/run/vless-profile.lock'
 
 if [ "$EUID" -ne 0 ]; then
   exec sudo "$0" "$@"
+fi
+
+if [ "${VLESS_PROFILE_LOCK_HELD:-0}" != '1' ]; then
+  exec 8>"$PROFILE_LOCK"
+  flock 8
+  export VLESS_PROFILE_LOCK_HELD=1
 fi
 
 exec 9>"$LOCK"
@@ -31,6 +40,14 @@ write_state() {
   tmp="$STATE.$$"
   printf '%s checked=%s\n' "$1" "$(date -Is)" >"$tmp"
   mv -f "$tmp" "$STATE"
+}
+
+write_profile() {
+  install -d -m 0755 "$PROFILE_DIR"
+  tmp="${PROFILE_FILE}.$$"
+  printf '%s\n' '178-104-130' >"$tmp"
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$PROFILE_FILE"
 }
 
 stop_exact() {
@@ -106,7 +123,7 @@ write_state 'RECOVERING action=local_xray'
 
 if /usr/local/bin/check-vless178130 --quick --quiet; then
   write_state "HEALTHY source=recovery-noop exit=$EXPECTED"
-  /usr/local/bin/vless178130-watchdog start >/dev/null
+  env -u VLESS_PROFILE_LOCK_HELD /usr/local/bin/vless178130-watchdog start >/dev/null
   echo "already healthy"
   trap - ERR
   exit 0
@@ -120,10 +137,11 @@ bash -n /usr/local/bin/vless178130-watchdog
 if ! iptables -C OUTPUT -o eth0 -d 203.0.113.20 -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1; then
   /usr/local/bin/killswitch-vless-178
 fi
-GW=$(ip route show default dev eth0 | awk '/default/{print $3; exit}')
-[ -n "$GW" ]
-ip route replace 203.0.113.20/32 via "$GW" dev eth0
-ip rule show | grep -q '^8999:' || ip rule add priority 8999 to 203.0.113.20/32 lookup main
+# Route only the XHTTP/Reality transport directly.  A destination-only rule
+# would also capture SSH:22 and make the killswitch block WSL SSH tunnels.
+ip route del 203.0.113.20/32 2>/dev/null || true
+while ip rule del priority 8999 2>/dev/null; do :; done
+ip rule add priority 8999 ipproto tcp to 203.0.113.20/32 dport 443 lookup main
 ip route flush cache
 
 TOUCHED=1
@@ -150,7 +168,8 @@ for n in 1 2 3; do
   sleep 3
 done
 /usr/local/bin/check-vless178130 --full
+write_profile
 write_state "HEALTHY source=recovery exit=$EXPECTED"
 trap - ERR
-/usr/local/bin/vless178130-watchdog start >/dev/null
+env -u VLESS_PROFILE_LOCK_HELD /usr/local/bin/vless178130-watchdog start >/dev/null
 echo "RECOVERY SUCCESS at $(date -Is)"

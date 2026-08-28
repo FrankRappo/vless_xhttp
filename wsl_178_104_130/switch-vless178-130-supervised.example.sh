@@ -1,12 +1,12 @@
 #!/bin/bash
 set -Eeuo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-D='/work/vpn/vless_xhttp/wsl_178_104_130'
+D='/opt/vless_xhttp/wsl_178_104_130'
 NEW_XRAY="$D/xray-wsl-178-104-130.json"
 NEW_SING="$D/sing-box-tun-178-104-130.json"
 XRAY_BIN='/usr/local/bin/xray'
-OLD_XRAY='/work/vpn/vless_xhttp/wsl_130/xray-client1-104.json'
-OLD_SING='/work/vpn/vless_xhttp/wsl_130/sing-box-tun-to-xray.json'
+OLD_XRAY='/opt/vless_xhttp/wsl_130/xray-client1-104.json'
+OLD_SING='/opt/vless_xhttp/wsl_130/sing-box-tun-to-xray.json'
 LOG='/tmp/vless178130-switch.log'
 STATE='/run/vless178130-switch.state'
 XRAY_LOG='/tmp/xray-vless178130.log'
@@ -15,9 +15,24 @@ XRAY_PID='/run/xray-vless178130.pid'
 SING_PID='/run/sing-vless178130.pid'
 EXPECTED='198.51.100.130'
 COMMITTED=0
+PROFILE_DIR='/etc/vless-wsl'
+PROFILE_FILE="$PROFILE_DIR/profile"
+PROFILE_LOCK='/run/vless-profile.lock'
+
+exec 8>"$PROFILE_LOCK"
+flock 8
+export VLESS_PROFILE_LOCK_HELD=1
 exec >>"$LOG" 2>&1
 echo "START $(date -Is) pid=$$" >"$STATE"
 echo "supervisor start $(date -Is)"
+write_profile() {
+  local tmp
+  install -d -m 0755 "$PROFILE_DIR"
+  tmp="${PROFILE_FILE}.$$"
+  printf '%s\n' '178-104-130' >"$tmp"
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$PROFILE_FILE"
+}
 fail() {
   rc=$?
   line=$1
@@ -52,9 +67,11 @@ iptables -C OUTPUT -o eth0 -d 203.0.113.20 -p tcp --dport 443 -j ACCEPT 2>/dev/n
   iptables -I OUTPUT 4 -o eth0 -d 203.0.113.20 -p tcp --dport 443 -j ACCEPT
 iptables -C INPUT -i eth0 -s 203.0.113.20 -p tcp --sport 443 -j ACCEPT 2>/dev/null || \
   iptables -I INPUT 4 -i eth0 -s 203.0.113.20 -p tcp --sport 443 -j ACCEPT
-GW=$(ip route show default dev eth0 | awk '/default/{print $3;exit}')
-ip route replace 203.0.113.20/32 via "$GW" dev eth0
-ip rule add priority 8999 to 203.0.113.20/32 lookup main 2>/dev/null || true
+# Only Xray's outer transport may bypass the TUN.  SSH/SCP and user tunnels to
+# the same server must continue through table 2022 and the active VPN.
+ip route del 203.0.113.20/32 2>/dev/null || true
+while ip rule del priority 8999 2>/dev/null; do :; done
+ip rule add priority 8999 ipproto tcp to 203.0.113.20/32 dport 443 lookup main
 ip route flush cache
 
 # Preflight Xray runs beside the old chain on a distinct SOCKS port.
@@ -103,7 +120,19 @@ else
   DIRECT_RC=$?
 fi
 [ "$DIRECT_RC" -ne 0 ]
+[ "$(iptables -S OUTPUT | head -n 1)" = '-P OUTPUT DROP' ]
+[ "$(ip6tables -S OUTPUT | head -n 1)" = '-P OUTPUT DROP' ]
+iptables -C OUTPUT -o eth0 -d 203.0.113.20 -p tcp --dport 443 -j ACCEPT
+if curl -4fsS --interface eth0 --connect-timeout 3 --max-time 5 telnet://1.1.1.1:53 </dev/null >/dev/null 2>&1; then
+  echo 'ERROR: direct eth0 TCP/53 leak detected'
+  false
+fi
+if curl -6fsS --connect-timeout 3 --max-time 5 https://api64.ipify.org >/dev/null 2>&1; then
+  echo 'ERROR: IPv6 leak detected'
+  false
+fi
 curl -4fsS -o /dev/null --connect-timeout 12 --max-time 35 https://www.youtube.com/
+write_profile
 echo "SUCCESS exit=$FINAL direct_rc=$DIRECT_RC $(date -Is)" | tee "$STATE"
-/usr/local/bin/vless178130-watchdog start
+env -u VLESS_PROFILE_LOCK_HELD /usr/local/bin/vless178130-watchdog start
 trap - ERR

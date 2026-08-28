@@ -6,11 +6,13 @@ SWITCH='/usr/local/bin/switch-vless178-130-supervised'
 RECOVER='/usr/local/bin/recover-vless178130'
 HEALTH='/usr/local/bin/check-vless178130'
 WATCHDOG='/usr/local/bin/vless178130-watchdog'
-XRAY_CONFIG='/work/vpn/vless_xhttp/wsl_178_104_130/xray-wsl-178-104-130.json'
-SING_CONFIG='/work/vpn/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
+XRAY_CONFIG='/opt/vless_xhttp/wsl_178_104_130/xray-wsl-178-104-130.json'
+SING_CONFIG='/opt/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
 STATE='/run/vless178130-switch.state'
 LOCK='/run/start-vless178130.lock'
 EXPECTED='198.51.100.130'
+PROFILE_DIR='/etc/vless-wsl'
+PROFILE_FILE="$PROFILE_DIR/profile"
 
 if [ "$EUID" -ne 0 ]; then
   exec sudo "$0" "$@"
@@ -26,6 +28,14 @@ write_state() {
   mv -f "$tmp" "$STATE"
 }
 
+write_profile() {
+  install -d -m 0755 "$PROFILE_DIR"
+  tmp="${PROFILE_FILE}.$$"
+  printf '%s\n' '178-104-130' >"$tmp"
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$PROFILE_FILE"
+}
+
 /usr/local/bin/xray run -test -c "$XRAY_CONFIG" >/dev/null
 /usr/local/bin/sing-box check -c "$SING_CONFIG" >/dev/null
 bash -n "$SWITCH"
@@ -34,7 +44,8 @@ bash -n "$HEALTH"
 bash -n "$WATCHDOG"
 
 if "$HEALTH" --quick --quiet; then
-  "$WATCHDOG" start >/dev/null
+  env -u VLESS_PROFILE_LOCK_HELD "$WATCHDOG" start >/dev/null
+  write_profile
   write_state "HEALTHY source=launcher exit=$EXPECTED"
   echo "Profile is healthy: exit $EXPECTED."
   "$HEALTH" --quick
@@ -51,7 +62,7 @@ else
   ACTION='activation'
 fi
 
-service atd start >/dev/null
+service atd start 8>&- 9>&- >/dev/null
 
 if pgrep -f "$TARGET" >/dev/null 2>&1; then
   echo "$ACTION is already running."
@@ -65,7 +76,7 @@ while read -r job _; do
   fi
 done < <(atq)
 
-OUT=$(printf '%s\n' "$TARGET" | at -M now 2>&1)
+OUT=$(printf 'env -u VLESS_PROFILE_LOCK_HELD %s\n' "$TARGET" | at -M now 8>&- 9>&- 2>&1)
 write_state "QUEUED action=$ACTION"
 printf '%s\n' "$OUT"
 echo "$ACTION queued independently through atd."

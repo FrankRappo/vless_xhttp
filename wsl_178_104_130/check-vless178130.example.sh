@@ -3,8 +3,8 @@ set -uo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 EXPECTED='198.51.100.130'
-XRAY_CONFIG='/work/vpn/vless_xhttp/wsl_178_104_130/xray-wsl-178-104-130.json'
-SING_CONFIG='/work/vpn/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
+XRAY_CONFIG='/opt/vless_xhttp/wsl_178_104_130/xray-wsl-178-104-130.json'
+SING_CONFIG='/opt/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
 MODE='quick'
 QUIET=0
 ERRORS=''
@@ -30,8 +30,9 @@ pgrep -f "^/usr/local/bin/xray run -c $XRAY_CONFIG$" >/dev/null 2>&1 || add_erro
 pgrep -f "^/usr/local/bin/sing-box run -c $SING_CONFIG$" >/dev/null 2>&1 || add_error 'sing_process'
 ip link show tun-vless178130 >/dev/null 2>&1 || add_error 'tun_link'
 ss -lntH 2>/dev/null | grep -q '127.0.0.1:10810' || add_error 'socks_listener'
-ip rule show 2>/dev/null | grep -q '^8999:.*178\.253\.55\.128.*lookup main' || add_error 'transport_rule'
-ip route get 203.0.113.20 2>/dev/null | grep -q 'dev eth0' || add_error 'transport_route'
+ip rule show 2>/dev/null | grep -Eq '^8999:.*to 203\.0\.113\.20 .*ipproto tcp .*dport 443 .*lookup main' || add_error 'transport_rule'
+ip route get 203.0.113.20 ipproto tcp dport 443 2>/dev/null | grep -q 'dev eth0' || add_error 'transport_route'
+ip route get 203.0.113.20 ipproto tcp dport 22 2>/dev/null | grep -q 'dev tun-vless178130' || add_error 'ssh_tun_route'
 iptables -C OUTPUT -o eth0 -d 203.0.113.20 -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1 || add_error 'killswitch_transport'
 
 if [ -n "$ERRORS" ]; then

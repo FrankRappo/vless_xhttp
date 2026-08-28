@@ -1,0 +1,10 @@
+[network]
+generateResolvConf = false
+
+# systemd в этой VM выключен. Boot helper сначала синхронно применяет killswitch
+# выбранного VPN-профиля, затем запускает cron и RAM-сторож.
+# Подробности: /work/settings/docs/RAM_GUARD.md и
+# /opt/vless_xhttp/wsl_178_104_130/PROFILE_SWITCHING.md
+# Применяется при следующем полном старте VM (wsl --shutdown).
+[boot]
+command = "/usr/sbin/iptables -P OUTPUT DROP; /usr/sbin/ip6tables -P OUTPUT DROP; exec /usr/local/sbin/vless-wsl-boot"

@@ -6,7 +6,7 @@ SELF='/usr/local/bin/vless178130-watchdog'
 PID='/run/vless178130-watchdog.pid'
 LOG='/tmp/vless178130-watchdog.log'
 STATE='/run/vless178130-switch.state'
-SING_CONFIG='/work/vpn/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
+SING_CONFIG='/opt/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
 EXPECTED='198.51.100.130'
 
 write_state() {
