@@ -99,7 +99,7 @@ iPhone/Windows/Android использовать `systemctl restart xray-egress-1
 3. собрать новый ruleset, `iptables-restore --test`, затем `iptables-restore` (атомарно, conntrack не сбрасывается);
 4. проверить доступ → `netfilter-persistent save` → снять страховку (`systemctl stop ipt-failsafe.timer`).
 
-**Текущее состояние WSL:** активны `/usr/local/bin/killswitch-vless-104`, профиль `wsl_130` и маршрут WSL → 104 → 130. Автозапуск закреплён в `/etc/wsl.conf` через detached-wrapper `/usr/local/sbin/start-vless130-at-boot`; журнал `/var/log/vless130-boot.log`, а `/etc/cron.d/vless130-health` повторяет проверку раз в минуту. Это окончательно выбранный владельцем рабочий вариант. Профиль через 178 сохранён как экспериментальный кандидат вместе с `/usr/local/bin/killswitch-vless-178` (allow `eth0` только к `203.0.113.20:443`, IPv6 DROP); этот killswitch **сейчас не активен**. Команда `sudo /usr/local/bin/start-vless178130` не является штатным запуском и используется только для осознанного повторного canary через независимый `atd`.
+**Текущее состояние WSL:** VPN выбирается только вручную. Холодный старт через `/usr/local/sbin/wsl-base-boot` не применяет VPN-killswitch и не восстанавливает последний профиль; cron recovery VLESS отключён. Команды `sudo vless-wsl use 104-130` и `sudo vless-wsl use 178-104-130` применяют свой fail-closed ruleset только в момент явного запуска. Ручной OpenVPN-over-SSH запускается отдельно через `sudo openvpn-wsl start` и имеет собственный killswitch. Одновременно должен работать только один VPN.
 
 ---
 

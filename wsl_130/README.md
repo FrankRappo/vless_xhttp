@@ -1,7 +1,7 @@
 # WSL VLESS/XHTTP → 104 → 130 manual flow
 
 Дата: 2026-05-26
-Статус: **активный постоянный WSL-профиль с 2026-08-19 после rollback эксперимента через 178**. Настроено и проверено вручную; systemd для WSL не используется.
+Статус: **сохранённый ручной WSL-профиль**. Настроено без systemd и запускается только командой `vless-wsl use 104-130`.
 
 ## Топология
 
@@ -28,10 +28,8 @@ WSL process traffic
 /usr/local/bin/sing-box
 /work/vpn/vless_xhttp/wsl_130/xray-client1-104.json
 /work/vpn/vless_xhttp/wsl_130/sing-box-tun-to-xray.json
-/usr/local/sbin/start-vless130-at-boot
-/etc/cron.d/vless130-health
-/work/vpn/vless_xhttp/wsl_130/start-vless130-at-boot.example.sh
-/work/vpn/vless_xhttp/wsl_130/vless130-health.cron.example
+/usr/local/bin/vless-wsl
+/usr/local/sbin/wsl-base-boot
 ```
 
 `/etc/hosts` содержит pin:
@@ -204,13 +202,11 @@ WSL killswitch находится здесь:
 задаче до включения VPN. Новые прямые соединения после запуска killswitch
 блокируются; проверка `curl --interface eth0` должна давать timeout.
 
-С 2026-08-19 владелец включил автозапуск постоянного профиля WSL→104→130.
-`/etc/wsl.conf` detached-запускает `/usr/local/sbin/start-vless130-at-boot`,
-который не дублирует уже здоровые процессы, делает до трёх попыток штатного
-`/usr/local/bin/start-vless130` и требует exit `198.51.100.130`. Тот же
-идемпотентный wrapper вызывается раз в минуту из `/etc/cron.d/vless130-health`
-для восстановления после падения Xray/sing-box. Журнал ошибок/восстановлений:
-`/var/log/vless130-boot.log`. При неуспехе killswitch остаётся fail-closed.
+Автозапуск и cron recovery намеренно удалены. Холодный старт WSL оставляет VPN
+выключенным и firewall открытым. Только явная команда
+`sudo vless-wsl use 104-130` применяет профильный fail-closed ruleset, запускает
+Xray/sing-box и проверяет ожидаемый exit. При неуспехе запуска killswitch
+остаётся fail-closed до явной остановки или выбора другого ручного VPN.
 
 Проверка правил в WSL:
 

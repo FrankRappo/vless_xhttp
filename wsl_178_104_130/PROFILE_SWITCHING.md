@@ -40,9 +40,9 @@ watchdog профиля 178, удаляет его policy route и запуск�
 - `ESTABLISHED,RELATED` сохранён согласно существующей operational-семантике.
 
 Полный набор правил каждой IP-семьи загружается транзакцией через
-`iptables-restore`/`ip6tables-restore`, а политики OUTPUT обеих семей
-переводятся в `DROP` ещё первой командой boot. Это исключает окно с разрешённым
-исходящим трафиком во время последовательного построения ruleset.
+`iptables-restore`/`ip6tables-restore` только при явном запуске профиля.
+Холодный старт WSL оставляет обычную сеть доступной; профильный fail-closed
+управляется только workflow `vless-wsl use ...`, а не boot/cron.
 
 Проверки:
 
@@ -61,29 +61,20 @@ FAIL_CLOSED_OK profile=<имя> default=blocked eth0=blocked ipv6=blocked
 HEALTHY profile=<имя> exit=198.51.100.130 fail_closed=yes
 ```
 
-## Boot и health recovery
+## Ручной жизненный цикл
 
-`/etc/wsl.conf` немедленно переводит IPv4/IPv6 OUTPUT в `DROP`, затем синхронно
-вызывает `/usr/local/sbin/vless-wsl-boot`. Boot helper применяет полный
-killswitch выбранного профиля, синхронно запускает и проверяет VPN и только
-после этого запускает cron и RAM guard. Поэтому до готовности TUN исходящий
-трафик остаётся закрыт, а WSL-сеанс не завершается посреди фоновой `atd` job.
+WSL не выбирает VPN при загрузке и не применяет VPN-killswitch. Файл
+`/etc/wsl.conf` запускает только нейтральный `wsl-base-boot`, а cron recovery
+VLESS отключён. Поэтому команда выбора имеет смысл и всегда остаётся явной:
 
-Холодный старт после `wsl --shutdown` проверен для обоих selector: в самой
-первой пользовательской команде IPv4 и IPv6 OUTPUT уже имели policy `DROP`,
-прямой `curl --interface eth0` был заблокирован, затем выбранный профиль
-восстановился с exit `198.51.100.130`; очереди `atd` и зависших lock не осталось.
+```bash
+sudo vless-wsl use 104-130
+sudo vless-wsl use 178-104-130
+```
 
-`/usr/local/sbin/start-vless130-at-boot` оставлен по старому пути для
-совместимости, но теперь читает профильный selector. Его вызывает boot helper,
-а `/etc/cron.d/vless130-health` повторяет ту же профильную health-проверку.
-
-Общий `/run/vless-profile.lock` исключает гонку boot/cron, ручного switch и
-recovery. Lock не наследуется долгоживущими Xray/sing-box/watchdog.
-
-Ручная команда `vless-wsl use ...` не возвращает управление сразу после
-постановки job, а ждёт проверенного конечного состояния. Это удерживает WSL
-активным даже при запуске одной командой через `wsl.exe`.
+Каждая команда сначала останавливает ручной OpenVPN, затем применяет ruleset
+своего entry и запускает только выбранный transport/TUN. Подробная матрица
+запуска и остановки находится в `MANUAL_LIFECYCLE.md`.
 
 ## SSH и SSH-туннели к Aeza
 

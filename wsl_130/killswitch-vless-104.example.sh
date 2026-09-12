@@ -1,12 +1,13 @@
 #!/bin/bash
 set -e
 
+HOSTS_FILE=${HOSTS_FILE:-/etc/hosts}
 PIN_HOST="203.0.113.10 entry.example.com # vless-wsl-130 pin"
-if ! grep -qE '(^|[[:space:]])news\.cjd\.wales([[:space:]]|$)' /etc/hosts; then
-  echo "$PIN_HOST" >> /etc/hosts
-elif ! grep -qF '203.0.113.10 entry.example.com' /etc/hosts; then
-  sed -i '/news\.cjd\.wales/d' /etc/hosts
-  echo "$PIN_HOST" >> /etc/hosts
+if ! grep -qE '(^|[[:space:]])entry\.example\.com([[:space:]]|$)' "$HOSTS_FILE"; then
+  echo "$PIN_HOST" >> "$HOSTS_FILE"
+elif ! grep -qF '203.0.113.10 entry.example.com' "$HOSTS_FILE"; then
+  sed -i '/entry\.example\.com/d' "$HOSTS_FILE"
+  echo "$PIN_HOST" >> "$HOSTS_FILE"
 fi
 
 # Fail closed before replacing the complete ruleset.  iptables-restore applies

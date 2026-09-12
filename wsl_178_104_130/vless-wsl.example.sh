@@ -270,6 +270,11 @@ case "$COMMAND" in
   use)
     PROFILE=${2:-}
     case "$PROFILE" in
+      104-130|178-104-130) ;;
+      *) usage >&2; exit 64 ;;
+    esac
+    if [ -x /usr/local/bin/openvpn-wsl ]; then /usr/local/bin/openvpn-wsl stop >/dev/null; fi
+    case "$PROFILE" in
       104-130)
         acquire_profile_lock
         if old_processes_running && ! new_processes_running && exit_is_correct; then
@@ -289,7 +294,6 @@ case "$COMMAND" in
         echo 'Switch to 178-104-130 requested; waiting for verified completion.'
         wait_for_profile '178-104-130'
         ;;
-      *) usage >&2; exit 64 ;;
     esac
     ;;
   test-rules)

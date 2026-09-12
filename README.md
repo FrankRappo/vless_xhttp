@@ -8,12 +8,13 @@
 
 **Дата ввода в эксплуатацию:** 2026-05-22
 **Основной вход:** 203.0.113.10; для внешних клиентов с 2026-08-18 используется дополнительный entry-hop 203.0.113.20.
+**WSL VPN запускаются только вручную:** [`wsl_178_104_130/MANUAL_LIFECYCLE.md`](./wsl_178_104_130/MANUAL_LIFECYCLE.md) — два VLESS-профиля и отдельный OpenVPN-over-SSH; холодный старт не включает killswitch.
 **Операционные заметки:** [`OPERATIONS.md`](./OPERATIONS.md) — SSH-доступ, entry relay 178, killswitch на 104
 **Профили entry relay:** [`178_104_194/README.md`](./178_104_194/README.md) — Windows/iPhone/Android
 **Windows с exit 149 через entry relay:** [`178_104_194/windows-178-104-149.txt`](./178_104_194/windows-178-104-149.txt) — Windows → 178 → 104 → 149; схема в [`wsl_149/README.md`](./wsl_149/README.md)
 **Полная фиксация:** [`FULL_SETUP_178_104_194.md`](./FULL_SETUP_178_104_194.md) — серверы, cleanup, проверки и операции
 **Будущие улучшения iPhone:** [`178_104_194/IPHONE_IMPROVEMENTS.md`](./178_104_194/IPHONE_IMPROVEMENTS.md) — пока не применены
-**Переключаемые WSL-профили:** [`wsl_178_104_130/README.md`](./wsl_178_104_130/README.md) — 104→130 и 178→104→130 с единым fail-closed killswitch; активный профиль сохраняется между перезапусками
+**Переключаемые WSL-профили:** [`wsl_178_104_130/README.md`](./wsl_178_104_130/README.md) — 104→130 и 178→104→130 с fail-closed killswitch после явной команды
 **Изоляция egress 178:** [`178_104_194/EGRESS_ISOLATION.md`](./178_104_194/EGRESS_ISOLATION.md) — независимые процессы 194/130/149 и быстрый health-check
 **Автовосстановление inbound 178:** [`178_104_194/ENTRY_HEALTH.md`](./178_104_194/ENTRY_HEALTH.md) — двойная проверка `packet-up`/`stream-one`, restart guard и rollback
 **Временный файлообменник:** [`FILE_HOSTING.md`](./FILE_HOSTING.md) — раздача файла клиенту по скрытой ссылке на `vpn.example.com` с авто-сгоранием

@@ -1,11 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
+KILLSWITCH_104=${KILLSWITCH_104:-/usr/local/bin/killswitch-vless-104}
+KILLSWITCH_178=${KILLSWITCH_178:-/usr/local/bin/killswitch-vless-178}
+
 run_case() {
   local name="$1" script="$2" target="$3"
   echo "Testing $name in an isolated network namespace..."
-  unshare --net env KILLSWITCH="$script" TARGET="$target" bash -ceu '
-    "$KILLSWITCH" >/dev/null
+  local hosts_file
+  hosts_file=$(mktemp)
+  cp /etc/hosts "$hosts_file"
+  trap 'rm -f "$hosts_file"' RETURN
+  unshare --net env KILLSWITCH="$script" TARGET="$target" HOSTS_FILE="$hosts_file" bash -ceu '
+    bash "$KILLSWITCH" >/dev/null
     [ "$(iptables -S INPUT | head -n 1)" = "-P INPUT DROP" ]
     [ "$(iptables -S FORWARD | head -n 1)" = "-P FORWARD DROP" ]
     [ "$(iptables -S OUTPUT | head -n 1)" = "-P OUTPUT DROP" ]
@@ -27,6 +34,6 @@ run_case() {
   echo "RULESET_OK profile=$name target=$target:443 ipv4=drop ipv6=drop"
 }
 
-run_case '104-130' '/usr/local/bin/killswitch-vless-104' '203.0.113.10'
-run_case '178-104-130' '/usr/local/bin/killswitch-vless-178' '203.0.113.20'
+run_case '104-130' "$KILLSWITCH_104" '203.0.113.10'
+run_case '178-104-130' "$KILLSWITCH_178" '203.0.113.20'
 echo 'ALL_KILLSWITCH_RULESETS_OK'
