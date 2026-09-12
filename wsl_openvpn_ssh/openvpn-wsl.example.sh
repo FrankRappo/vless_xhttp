@@ -5,6 +5,8 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CONFIG='/etc/openvpn/client/194_130wsl-over-ssh.conf'
 PIDFILE='/run/openvpn-wsl-ssh.pid'
 LOG='/var/log/openvpn-wsl-ssh.log'
+STATEFILE='/run/openvpn-wsl.enabled'
+LOCKFILE='/run/openvpn-wsl.lock'
 EXPECTED_EXIT='198.51.100.130'
 XRAY_104='/opt/vless_xhttp/wsl_130/xray-client1-104.json'
 SING_104='/opt/vless_xhttp/wsl_130/sing-box-tun-to-xray.json'
@@ -14,6 +16,11 @@ SING_178='/opt/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
 if [ "$EUID" -ne 0 ]; then
   exec sudo "$0" "$@"
 fi
+
+acquire_lock() {
+  exec 9>"$LOCKFILE"
+  flock 9
+}
 
 read_endpoint() {
   read -r _ ENDPOINT_IP ENDPOINT_PORT < <(awk '$1 == "remote" { print; exit }' "$CONFIG")
@@ -108,21 +115,40 @@ check_profile() {
   echo "HEALTHY profile=openvpn-ssh-194-130 exit=$EXPECTED_EXIT fail_closed=yes"
 }
 
+stop_openvpn_process() {
+  pgrep -f "^/usr/sbin/openvpn --config ${CONFIG} " | xargs -r kill || true
+  for _ in $(seq 1 10); do
+    openvpn_running || break
+    sleep 1
+  done
+  rm -f "$PIDFILE"
+}
+
 start_profile() {
+  local health deadline
   read_endpoint
   stop_vless
   apply_firewall
 
-  if ! openvpn_running; then
-    rm -f "$PIDFILE"
-    touch "$LOG"
-    /usr/sbin/openvpn --config "$CONFIG" --daemon openvpn-wsl-ssh --writepid "$PIDFILE" --log-append "$LOG"
+  if openvpn_running; then
+    if health=$(check_profile 2>/dev/null); then
+      printf '%s\n' "$health"
+      return 0
+    fi
+    echo 'Existing OpenVPN session is unhealthy; restarting under fail-closed rules.' >&2
+    stop_openvpn_process
   fi
 
-  for _ in $(seq 1 40); do
+  rm -f "$PIDFILE"
+  touch "$LOG"
+  /usr/sbin/openvpn --config "$CONFIG" --daemon openvpn-wsl-ssh --writepid "$PIDFILE" --log-append "$LOG" 9>&-
+
+  deadline=$((SECONDS + 45))
+  while [ "$SECONDS" -lt "$deadline" ]; do
     if ip link show tun0 >/dev/null 2>&1 && ip route get 1.1.1.1 | grep -q 'dev tun0'; then
-      check_profile
-      return
+      if check_profile; then
+        return 0
+      fi
     fi
     sleep 1
   done
@@ -133,12 +159,7 @@ start_profile() {
 }
 
 stop_profile() {
-  pgrep -f "^/usr/sbin/openvpn --config ${CONFIG} " | xargs -r kill || true
-  for _ in $(seq 1 10); do
-    openvpn_running || break
-    sleep 1
-  done
-  rm -f "$PIDFILE"
+  stop_openvpn_process
   clear_firewall
   echo 'STOPPED profile=openvpn-ssh-194-130 firewall=normal'
 }
@@ -153,13 +174,42 @@ show_status() {
 }
 
 case "${1:-status}" in
-  start) start_profile ;;
-  stop) stop_profile ;;
-  restart) stop_profile; start_profile ;;
-  status) show_status ;;
-  check) read_endpoint; check_profile ;;
+  start)
+    acquire_lock
+    touch "$STATEFILE"
+    start_profile
+    ;;
+  recover)
+    acquire_lock
+    if [ ! -e "$STATEFILE" ]; then
+      echo 'DISABLED profile=openvpn-ssh-194-130'
+      exit 3
+    fi
+    start_profile
+    ;;
+  stop)
+    acquire_lock
+    rm -f "$STATEFILE"
+    stop_profile
+    ;;
+  restart)
+    acquire_lock
+    touch "$STATEFILE"
+    read_endpoint
+    stop_vless
+    apply_firewall
+    stop_openvpn_process
+    start_profile
+    ;;
+  status)
+    show_status
+    ;;
+  check)
+    read_endpoint
+    check_profile
+    ;;
   *)
-    echo 'usage: openvpn-wsl {start|stop|restart|status|check}' >&2
+    echo 'usage: openvpn-wsl {start|recover|stop|restart|status|check}' >&2
     exit 64
     ;;
 esac

@@ -48,3 +48,32 @@ Linux wrapper останавливает оба VLESS TUN, применяет о
     sudo vless-wsl use 178-104-130
 
 Команда VLESS сначала останавливает OpenVPN, затем соответствующий launcher применяет свой killswitch.
+
+## Автовосстановление без ослабления kill switch
+
+После ручного запуска PowerShell launcher создаёт скрытый watchdog и передаёт
+ему уже открытый SSH-forward. Watchdog:
+
+- следит за процессом SSH и здоровьем OpenVPN;
+- при обрыве заново создаёт SSH-forward и выполняет команду
+  openvpn-wsl recover;
+- перед любым перезапуском повторно применяет fail-closed ruleset;
+- никогда не вызывает openvpn-wsl stop и не очищает firewall;
+- завершается, если профиль вручную отключён или дистрибутив WSL остановлен.
+
+Ручное разрешение хранится только в /run/openvpn-wsl.enabled. Поэтому после
+wsl --shutdown оно исчезает: холодный старт WSL не запускает VPN или
+watchdog. Команда openvpn-wsl start создаёт разрешение, openvpn-wsl stop
+удаляет его. Внутренний recover отказывается запускаться без этого файла.
+
+Установить openvpn-ssh-watchdog.example.ps1 рядом с Windows launcher и
+передать его через -WatchdogPath, либо переименовать под локальный launcher.
+Для полной остановки использовать stop-openvpn-ssh.example.ps1: он сначала
+останавливает watchdog/SSH, затем отключает OpenVPN и возвращает обычный
+firewall.
+
+WSL-команда ../wsl-launchers/start-openvpn-194-130.sh вызывает установленный
+на рабочем столе Windows launcher Run_VPN_Tunnel_new.ps1, поэтому включает и
+SSH-forward, и watchdog. Скрипт Windows требует права администратора.
+
+Результат контролируемого failover-теста описан в FAILOVER_TEST.md.
