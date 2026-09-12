@@ -98,12 +98,16 @@ stop_vless() {
 }
 
 check_profile() {
-  local out
+  local out check_ip
   openvpn_running
   ip link show tun0 >/dev/null 2>&1
   ip route get 1.1.1.1 | grep -q 'dev tun0'
   assert_firewall
-  out=$(curl -4fsS --connect-timeout 8 --max-time 20 https://api.ipify.org)
+  out=''
+  for check_ip in 104.26.13.205 104.26.12.205; do
+    out=$(curl -4fsS --resolve "api.ipify.org:443:${check_ip}" --connect-timeout 8 --max-time 20 https://api.ipify.org || true)
+    [ "$out" = "$EXPECTED_EXIT" ] && break
+  done
   if [ "$out" != "$EXPECTED_EXIT" ]; then
     echo "ERROR: expected exit $EXPECTED_EXIT, got ${out:-unavailable}" >&2
     return 1

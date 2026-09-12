@@ -7,7 +7,8 @@ param(
     [int]$ForwardPort = 8443,
     [int]$AdoptSshPid = 0,
     [int]$HealthIntervalSeconds = 15,
-    [int]$RetrySeconds = 3
+    [int]$RetrySeconds = 3,
+    [int]$FailureThreshold = 2
 )
 
 $ErrorActionPreference = 'Continue'
@@ -147,6 +148,7 @@ try {
             break
         }
 
+        $ConsecutiveFailures = 0
         while (-not $SshProcess.HasExited) {
             if ($SshProcess.WaitForExit($HealthIntervalSeconds * 1000)) {
                 break
@@ -158,15 +160,25 @@ try {
             if (-not (Test-ProfileEnabled)) {
                 break Supervisor
             }
-            if (-not (Test-ProfileHealthy)) {
-                if ($SshProcess.HasExited) {
-                    break
-                }
-                Write-Log 'Health check failed; recovering without clearing firewall.'
-                $RecoveryCode = Invoke-ProfileRecovery
-                if ($RecoveryCode -eq 3) {
-                    break Supervisor
-                }
+            if (Test-ProfileHealthy) {
+                $ConsecutiveFailures = 0
+                continue
+            }
+            if ($SshProcess.HasExited) {
+                break
+            }
+
+            $ConsecutiveFailures++
+            Write-Log ("Health check failed ({0}/{1})." -f $ConsecutiveFailures, $FailureThreshold)
+            if ($ConsecutiveFailures -lt $FailureThreshold) {
+                continue
+            }
+
+            Write-Log 'Consecutive health checks failed; recovering without clearing firewall.'
+            $RecoveryCode = Invoke-ProfileRecovery
+            $ConsecutiveFailures = 0
+            if ($RecoveryCode -eq 3) {
+                break Supervisor
             }
         }
 
