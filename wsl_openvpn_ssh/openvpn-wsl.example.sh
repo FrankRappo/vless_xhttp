@@ -7,17 +7,24 @@ PIDFILE='/run/openvpn-wsl-ssh.pid'
 LOG='/var/log/openvpn-wsl-ssh.log'
 STATEFILE='/run/openvpn-wsl.enabled'
 LOCKFILE='/run/openvpn-wsl.lock'
+PROFILE_LOCK='/run/vless-profile.lock'
 EXPECTED_EXIT='198.51.100.130'
 XRAY_104='/opt/vless_xhttp/wsl_130/xray-client1-104.json'
 SING_104='/opt/vless_xhttp/wsl_130/sing-box-tun-to-xray.json'
 XRAY_178='/opt/vless_xhttp/wsl_178_104_130/xray-wsl-178-104-130.json'
 SING_178='/opt/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
+SSH_MANAGER='/usr/local/bin/vless104130-ssh'
 
 if [ "$EUID" -ne 0 ]; then
   exec sudo "$0" "$@"
 fi
 
 acquire_lock() {
+  if [ "${VLESS_PROFILE_LOCK_HELD:-0}" != '1' ]; then
+    exec 8>"$PROFILE_LOCK"
+    flock 8
+    export VLESS_PROFILE_LOCK_HELD=1
+  fi
   exec 9>"$LOCKFILE"
   flock 9
 }
@@ -87,6 +94,9 @@ assert_firewall() {
 }
 
 stop_vless() {
+  if [ -x "$SSH_MANAGER" ]; then
+    "$SSH_MANAGER" quiesce >/dev/null 2>&1 || true
+  fi
   /usr/local/bin/vless178130-watchdog stop >/dev/null 2>&1 || true
   pgrep -f "^/usr/local/bin/sing-box run -c ${SING_104}$" | xargs -r kill || true
   pgrep -f "^/usr/local/bin/xray run -c ${XRAY_104}$" | xargs -r kill || true
@@ -168,6 +178,11 @@ stop_profile() {
   echo 'STOPPED profile=openvpn-ssh-194-130 firewall=normal'
 }
 
+quiesce_profile() {
+  rm -f "$STATEFILE"
+  stop_openvpn_process
+}
+
 show_status() {
   local process='stopped' tun='none' route='direct' firewall='normal'
   openvpn_running && process='running' || true
@@ -196,6 +211,10 @@ case "${1:-status}" in
     rm -f "$STATEFILE"
     stop_profile
     ;;
+  quiesce)
+    acquire_lock
+    quiesce_profile
+    ;;
   restart)
     acquire_lock
     touch "$STATEFILE"
@@ -213,7 +232,7 @@ case "${1:-status}" in
     check_profile
     ;;
   *)
-    echo 'usage: openvpn-wsl {start|recover|stop|restart|status|check}' >&2
+    echo 'usage: openvpn-wsl {start|recover|stop|quiesce|restart|status|check}' >&2
     exit 64
     ;;
 esac

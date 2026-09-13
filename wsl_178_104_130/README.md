@@ -26,13 +26,15 @@ WSL (Xray XHTTP/Reality)
 sudo /usr/local/bin/vless-wsl status
 sudo /usr/local/bin/vless-wsl use 104-130
 sudo /usr/local/bin/vless-wsl use 178-104-130
+sudo /usr/local/bin/vless-wsl use 104-130-over-ssh
 sudo /usr/local/bin/vless-wsl check
 ```
 
 Выбранный вариант хранится в `/etc/vless-wsl/profile`, но используется только
 для статуса и явного управления. Холодный старт WSL не запускает VPN и не
 применяет killswitch; cron recovery VLESS отключён. Профиль запускается только
-командой `vless-wsl use ...`. См. `MANUAL_LIFECYCLE.md`.
+командой `vless-wsl use ...`. SSH-вариант описан отдельно в
+`../wsl_104_130_ssh/README.md`. См. также `MANUAL_LIFECYCLE.md`.
 
 Переключение на 178 сначала запускает Xray рядом со старым профилем на SOCKS
 `127.0.0.1:10810`, проверяет полный выход 130 и только затем заменяет TUN и

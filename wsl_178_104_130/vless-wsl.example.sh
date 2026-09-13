@@ -10,6 +10,9 @@ OLD_XRAY='/opt/vless_xhttp/wsl_130/xray-client1-104.json'
 OLD_SING='/opt/vless_xhttp/wsl_130/sing-box-tun-to-xray.json'
 NEW_XRAY='/opt/vless_xhttp/wsl_178_104_130/xray-wsl-178-104-130.json'
 NEW_SING='/opt/vless_xhttp/wsl_178_104_130/sing-box-tun-178-104-130.json'
+SSH_MANAGER='/usr/local/bin/vless104130-ssh'
+SSH_XRAY='/run/vless104130-ssh/xray.json'
+SSH_SING='/run/vless104130-ssh/sing-box.json'
 
 if [ "$EUID" -ne 0 ]; then
   exec sudo "$0" "$@"
@@ -54,6 +57,18 @@ new_processes_running() {
     ip link show tun-vless178130 >/dev/null 2>&1
 }
 
+ssh_profile_running() {
+  "$SSH_MANAGER" check --quick --quiet >/dev/null 2>&1
+}
+
+quiesce_openvpn() {
+  [ -x /usr/local/bin/openvpn-wsl ] || return 0
+  if ! /usr/local/bin/openvpn-wsl quiesce >/dev/null 2>&1; then
+    pkill -f '^/usr/sbin/openvpn --config /etc/openvpn/client/194_130wsl-over-ssh.conf ' 2>/dev/null || true
+    rm -f /run/openvpn-wsl.enabled /run/openvpn-wsl-ssh.pid
+  fi
+}
+
 exit_is_correct() {
   local out attempt
   for attempt in 1 2 3; do
@@ -66,17 +81,18 @@ exit_is_correct() {
 }
 
 assert_firewall() {
-  local target="$1" unexpected
+  local target="$1" port="${2:-443}" unexpected
   [ "$(iptables -S OUTPUT | head -n 1)" = '-P OUTPUT DROP' ]
   [ "$(iptables -S INPUT | head -n 1)" = '-P INPUT DROP' ]
   [ "$(iptables -S FORWARD | head -n 1)" = '-P FORWARD DROP' ]
   [ "$(ip6tables -S OUTPUT | head -n 1)" = '-P OUTPUT DROP' ]
   [ "$(ip6tables -S INPUT | head -n 1)" = '-P INPUT DROP' ]
   [ "$(ip6tables -S FORWARD | head -n 1)" = '-P FORWARD DROP' ]
-  iptables -C OUTPUT -o eth0 -d "$target" -p tcp --dport 443 -j ACCEPT
-  iptables -C INPUT -i eth0 -s "$target" -p tcp --sport 443 -j ACCEPT
-  unexpected=$(iptables -S OUTPUT | awk -v target="$target/32" '
-    $1 == "-A" && $2 == "OUTPUT" && /-o eth0/ && /-j ACCEPT/ && index($0, "-d " target) == 0 { print }
+  iptables -C OUTPUT -o eth0 -d "$target" -p tcp --dport "$port" -j ACCEPT
+  iptables -C INPUT -i eth0 -s "$target" -p tcp --sport "$port" -j ACCEPT
+  unexpected=$(iptables -S OUTPUT | awk -v target="$target/32" -v port="$port" '
+    $1 == "-A" && $2 == "OUTPUT" && /-o eth0/ && /-j ACCEPT/ &&
+      (index($0, "-d " target) == 0 || index($0, "--dport " port) == 0) { print }
   ')
   if [ -n "$unexpected" ]; then
     echo "ERROR: unexpected eth0 allow rule: $unexpected" >&2
@@ -110,6 +126,10 @@ check_profile() {
     178-104-130)
       /usr/local/bin/check-vless178130 --full
       assert_firewall '203.0.113.20'
+      ;;
+    104-130-over-ssh)
+      "$SSH_MANAGER" check --full
+      return
       ;;
     *)
       echo "ERROR: invalid selected profile: $profile" >&2
@@ -150,6 +170,10 @@ wait_for_profile() {
         check_profile "$wanted"
         return 0
       fi
+      if [ "$wanted" = '104-130-over-ssh' ] && "$SSH_MANAGER" check --quick --quiet; then
+        check_profile "$wanted"
+        return 0
+      fi
     fi
     if [ "$wanted" = '178-104-130' ] && [ -r /run/vless178130-switch.state ]; then
       state=$(cat /run/vless178130-switch.state)
@@ -168,20 +192,29 @@ wait_for_profile() {
 }
 
 show_status() {
-  local profile old='stopped' new='stopped' tun='none' transport='unknown' out='unavailable'
+  local profile old='stopped' new='stopped' ssh_profile='stopped'
+  local tun='none' transport='unknown' out='unavailable' base='unavailable'
   profile=$(read_profile)
   old_processes_running && old='running' || true
   new_processes_running && new='running' || true
+  ssh_profile_running && ssh_profile='running' || true
   ip link show tun-vless130 >/dev/null 2>&1 && tun='tun-vless130'
   ip link show tun-vless178130 >/dev/null 2>&1 && tun='tun-vless178130'
+  ip link show tun-vlessssh130 >/dev/null 2>&1 && tun='tun-vlessssh130'
   if iptables -C OUTPUT -o eth0 -d 203.0.113.10 -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1; then
     transport='203.0.113.10:443'
   elif iptables -C OUTPUT -o eth0 -d 203.0.113.20 -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1; then
     transport='203.0.113.20:443'
+  elif iptables -C OUTPUT -o eth0 -d 203.0.113.10 -p tcp --dport 22 -j ACCEPT >/dev/null 2>&1; then
+    transport='203.0.113.10:22/ssh'
+  fi
+  if [ "$profile" = '104-130-over-ssh' ]; then
+    base=$("$SSH_MANAGER" status 2>/dev/null | sed -n 's/^base_exit=//p' | head -n 1)
+    [ -n "$base" ] || base='unavailable'
   fi
   out=$(curl -4fsS --connect-timeout 4 --max-time 10 https://api.ipify.org 2>/dev/null || printf '%s' 'unavailable')
-  printf 'selected=%s\nold_profile=%s\nnew_profile=%s\ntun=%s\nallowed_transport=%s\nexit=%s\n' \
-    "$profile" "$old" "$new" "$tun" "$transport" "$out"
+  printf 'selected=%s\nold_profile=%s\nnew_profile=%s\nssh_profile=%s\ntun=%s\nallowed_transport=%s\nbase_exit=%s\nexit=%s\n' \
+    "$profile" "$old" "$new" "$ssh_profile" "$tun" "$transport" "$base" "$out"
 }
 
 restore_after_fail_closed_test() {
@@ -189,6 +222,7 @@ restore_after_fail_closed_test() {
   case "$profile" in
     104-130) /usr/local/bin/start-vless130 ;;
     178-104-130) /usr/local/bin/recover-vless178130 ;;
+    104-130-over-ssh) "$SSH_MANAGER" recover ;;
   esac
 }
 
@@ -202,6 +236,9 @@ test_fail_closed() {
   if [ "$profile" = '178-104-130' ]; then
     sing_config="$NEW_SING"
     /usr/local/bin/vless178130-watchdog stop >/dev/null 2>&1 || true
+  elif [ "$profile" = '104-130-over-ssh' ]; then
+    sing_config="$SSH_SING"
+    /usr/local/bin/vless104130-ssh-watchdog stop >/dev/null 2>&1 || true
   else
     sing_config="$OLD_SING"
   fi
@@ -254,6 +291,7 @@ usage:
   vless-wsl check
   vless-wsl use 104-130
   vless-wsl use 178-104-130
+  vless-wsl use 104-130-over-ssh
   vless-wsl test-rules
   vless-wsl test-fail-closed
 EOF
@@ -270,12 +308,13 @@ case "$COMMAND" in
   use)
     PROFILE=${2:-}
     case "$PROFILE" in
-      104-130|178-104-130) ;;
+      104-130|178-104-130|104-130-over-ssh) ;;
       *) usage >&2; exit 64 ;;
     esac
-    if [ -x /usr/local/bin/openvpn-wsl ]; then /usr/local/bin/openvpn-wsl stop >/dev/null; fi
+    quiesce_openvpn
     case "$PROFILE" in
       104-130)
+        "$SSH_MANAGER" quiesce >/dev/null 2>&1 || true
         acquire_profile_lock
         if old_processes_running && ! new_processes_running && exit_is_correct; then
           /usr/local/bin/killswitch-vless-104
@@ -290,9 +329,15 @@ case "$COMMAND" in
         fi
         ;;
       178-104-130)
+        "$SSH_MANAGER" quiesce >/dev/null 2>&1 || true
         /usr/local/bin/start-vless178130
         echo 'Switch to 178-104-130 requested; waiting for verified completion.'
         wait_for_profile '178-104-130'
+        ;;
+      104-130-over-ssh)
+        "$SSH_MANAGER" start
+        echo 'Switch to 104-130-over-ssh requested; waiting for verified completion.'
+        wait_for_profile '104-130-over-ssh'
         ;;
     esac
     ;;

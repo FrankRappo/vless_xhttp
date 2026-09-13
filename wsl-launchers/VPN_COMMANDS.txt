@@ -1,5 +1,5 @@
-ЗАПУСК ТРЁХ VPN-ПРОФИЛЕЙ В WSL
-================================
+ЗАПУСК ЧЕТЫРЁХ VPN-ПРОФИЛЕЙ В WSL
+==================================
 
 Откройте Ubuntu/WSL и выполните:
 
@@ -11,7 +11,14 @@ cd /work/vpn
 2. VLESS 178 -> 104 -> 130:
 ./start-vless-178-104-130.sh
 
-3. OpenVPN over SSH 194 -> 130 с автовосстановлением:
+3. VLESS 104 -> 130 через SSH к 104, с fail-closed и автовосстановлением:
+./start-vless-104-130-over-ssh.sh
+
+Весь исходящий трафик WSL идёт через 130. Если внутри WSL поднять ещё один
+туннель, его endpoint также сначала достигается через 130, а итоговым exit
+может стать IP верхнего туннеля.
+
+4. OpenVPN over SSH 194 -> 130 с автовосстановлением:
 ./start-openvpn-194-130.sh
 
 Команда OpenVPN запускает Windows SSH-forward, OpenVPN и скрытый watchdog.
@@ -19,6 +26,7 @@ cd /work/vpn
 
 Проверка состояния:
 sudo /usr/local/bin/vless-wsl status
+sudo /usr/local/bin/vless104130-ssh-watchdog status
 sudo /usr/local/bin/openvpn-wsl status
 
 Проверка активного профиля:

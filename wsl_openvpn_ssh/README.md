@@ -1,6 +1,6 @@
 # Ручной OpenVPN-over-SSH для WSL
 
-Этот режим запускается только вручную и взаимоисключаем с двумя VLESS-профилями.
+Этот режим запускается только вручную и взаимоисключаем с тремя VLESS-профилями.
 
 Схема:
 
@@ -42,12 +42,13 @@ Windows не требуются. Схема сохраняет работу по
 
     sudo openvpn-wsl stop
 
-Linux wrapper останавливает оба VLESS TUN, применяет отдельный OpenVPN fail-closed ruleset, запускает OpenVPN, проверяет exit и доказывает блокировку прямого eth0.
+Linux wrapper останавливает все VLESS TUN, применяет отдельный OpenVPN fail-closed ruleset, запускает OpenVPN, проверяет exit и доказывает блокировку прямого eth0.
 
 Переход на VLESS выполняется только одной из команд:
 
     sudo vless-wsl use 104-130
     sudo vless-wsl use 178-104-130
+    sudo vless-wsl use 104-130-over-ssh
 
 Команда VLESS сначала останавливает OpenVPN, затем соответствующий launcher применяет свой killswitch.
 
