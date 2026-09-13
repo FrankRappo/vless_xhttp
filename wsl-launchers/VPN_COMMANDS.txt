@@ -15,7 +15,7 @@ cd /work/vpn
 ./start-openvpn-194-130.sh
 
 Команда OpenVPN запускает Windows SSH-forward, OpenVPN и скрытый watchdog.
-Для неё Windows PowerShell должен иметь права администратора.
+Права администратора Windows для запуска не требуются.
 
 Проверка состояния:
 sudo /usr/local/bin/vless-wsl status

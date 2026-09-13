@@ -1,4 +1,3 @@
-#requires -RunAsAdministrator
 param(
     [string]$Distro = 'Ubuntu-24.04',
     [string]$KeyPath = "$HOME\.ssh\jump194",
@@ -17,6 +16,12 @@ $WslExe = "$env:WINDIR\System32\wsl.exe"
 $LogDirectory = Join-Path $env:LOCALAPPDATA 'OpenVPN-SSH'
 $LogPath = Join-Path $LogDirectory 'watchdog.log'
 $MutexName = 'Global\OpenVPN-SSH-Watchdog-' + ($Distro -replace '[^A-Za-z0-9_.-]', '_') + "-$ForwardPort"
+
+$DefaultRoute = & $WslExe -d $Distro -u root -- ip route show default
+$WslGateway = (($DefaultRoute | Select-Object -First 1) -split '\s+')[2]
+if ($WslGateway -notmatch '^\d{1,3}(\.\d{1,3}){3}$') {
+    throw "Cannot determine the WSL gateway: '$DefaultRoute'"
+}
 
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 
@@ -67,7 +72,7 @@ function Invoke-ProfileRecovery {
 }
 
 function Start-SshForward {
-    $ForwardSpec = '127.0.0.1:{0}:127.0.0.1:443' -f $ForwardPort
+    $ForwardSpec = '{0}:{1}:127.0.0.1:443' -f $WslGateway, $ForwardPort
     $SshArgs = @(
         '-N', '-T',
         '-i', $KeyPath,
@@ -93,7 +98,7 @@ function Wait-SshForward {
         if ($Process.HasExited) {
             return $false
         }
-        $Listener = Get-NetTCPConnection -State Listen -LocalAddress 127.0.0.1 `
+        $Listener = Get-NetTCPConnection -State Listen -LocalAddress $WslGateway `
             -LocalPort $ForwardPort -ErrorAction SilentlyContinue |
             Where-Object OwningProcess -eq $Process.Id
         if ($Listener) {

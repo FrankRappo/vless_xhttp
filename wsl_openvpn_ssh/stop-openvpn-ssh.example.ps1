@@ -1,4 +1,3 @@
-#requires -RunAsAdministrator
 param(
     [string]$Distro = 'Ubuntu-24.04',
     [int]$ForwardPort = 8443,
@@ -15,7 +14,7 @@ Get-CimInstance Win32_Process |
     } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
-$ForwardPattern = [regex]::Escape(('127.0.0.1:{0}:127.0.0.1:443' -f $ForwardPort))
+$ForwardPattern = [regex]::Escape((':{0}:127.0.0.1:443' -f $ForwardPort))
 Get-CimInstance Win32_Process |
     Where-Object {
         $_.Name -eq 'ssh.exe' -and
@@ -26,12 +25,6 @@ Get-CimInstance Win32_Process |
 wsl.exe -d $Distro -u root -- /usr/local/bin/openvpn-wsl stop
 if ($LASTEXITCODE -ne 0) {
     throw "Cannot stop OpenVPN profile: $LASTEXITCODE"
-}
-
-$DefaultRoute = wsl.exe -d $Distro -u root -- ip route show default
-$WslGateway = (($DefaultRoute | Select-Object -First 1) -split '\s+')[2]
-if ($WslGateway -match '^\d{1,3}(\.\d{1,3}){3}$') {
-    netsh interface portproxy delete v4tov4 listenaddress=$WslGateway listenport=$ForwardPort 2>$null | Out-Null
 }
 
 Write-Host 'OpenVPN over SSH and watchdog stopped; WSL firewall returned to normal.' -ForegroundColor Green

@@ -1,4 +1,3 @@
-#requires -RunAsAdministrator
 param(
     [string]$Distro = 'Ubuntu-24.04',
     [string]$KeyPath = "$HOME\.ssh\jump194",
@@ -32,16 +31,13 @@ Get-CimInstance Win32_Process |
     } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
-$ForwardPattern = [regex]::Escape(('127.0.0.1:{0}:127.0.0.1:443' -f $ForwardPort))
+$ForwardPattern = [regex]::Escape((':{0}:127.0.0.1:443' -f $ForwardPort))
 Get-CimInstance Win32_Process |
     Where-Object {
         $_.Name -eq 'ssh.exe' -and
         $_.CommandLine -match $ForwardPattern
     } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-
-netsh interface portproxy delete v4tov4 listenaddress=$WslGateway listenport=$ForwardPort 2>$null | Out-Null
-netsh interface portproxy add v4tov4 listenaddress=$WslGateway listenport=$ForwardPort connectaddress=127.0.0.1 connectport=$ForwardPort | Out-Null
 
 $OpenVpnConfig = '/etc/openvpn/client/194_130wsl-over-ssh.conf'
 $RemoteDirective = "remote $WslGateway $ForwardPort"
@@ -54,7 +50,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Cannot update OpenVPN endpoint in $OpenVpnConfig"
 }
 
-$ForwardSpec = '127.0.0.1:{0}:127.0.0.1:443' -f $ForwardPort
+$ForwardSpec = '{0}:{1}:127.0.0.1:443' -f $WslGateway, $ForwardPort
 $SshArgs = @(
     '-N', '-T',
     '-i', $KeyPath,
@@ -76,7 +72,7 @@ for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
     if ($SshProcess.HasExited) {
         throw "SSH forward exited with code $($SshProcess.ExitCode)"
     }
-    $Listener = Get-NetTCPConnection -State Listen -LocalAddress 127.0.0.1 -LocalPort $ForwardPort -ErrorAction SilentlyContinue |
+    $Listener = Get-NetTCPConnection -State Listen -LocalAddress $WslGateway -LocalPort $ForwardPort -ErrorAction SilentlyContinue |
         Where-Object OwningProcess -eq $SshProcess.Id
     if ($Listener) {
         $ForwardReady = $true
@@ -85,7 +81,7 @@ for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
 }
 if (-not $ForwardReady) {
     Stop-Process -Id $SshProcess.Id -Force -ErrorAction SilentlyContinue
-    throw 'SSH forward did not open 127.0.0.1:8443'
+    throw "SSH forward did not open $WslGateway`:$ForwardPort"
 }
 
 $StartOutput = wsl.exe -d $Distro -u root -- /usr/local/bin/openvpn-wsl start 2>&1

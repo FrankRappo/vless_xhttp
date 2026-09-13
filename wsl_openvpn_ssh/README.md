@@ -22,12 +22,14 @@
 6. Не устанавливать удалённые boot/cron launchers VLESS.
 
 PowerShell launcher при каждом запуске подставляет текущий WSL gateway в
-директиву `remote` OpenVPN config. Это сохраняет работу после `wsl --shutdown`,
-даже если адрес WSL NAT изменился.
+директиву `remote` OpenVPN config и привязывает SSH-forward непосредственно к
+этому адресу. `netsh portproxy` не используется, поэтому права администратора
+Windows не требуются. Схема сохраняет работу после `wsl --shutdown`, даже если
+адрес WSL NAT изменился.
 
 ## Ручной запуск
 
-Из PowerShell с правами администратора:
+Из обычного PowerShell без прав администратора:
 
     .\start-openvpn-ssh.example.ps1 -RemoteHost 192.0.2.194
 
@@ -78,6 +80,6 @@ firewall.
 
 WSL-команда ../wsl-launchers/start-openvpn-194-130.sh вызывает установленный
 на рабочем столе Windows launcher Run_VPN_Tunnel_new.ps1, поэтому включает и
-SSH-forward, и watchdog. Скрипт Windows требует права администратора.
+SSH-forward и watchdog. Скрипты Windows работают без прав администратора.
 
 Результат контролируемого failover-теста описан в FAILOVER_TEST.md.
