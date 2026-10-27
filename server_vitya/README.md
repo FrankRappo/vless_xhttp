@@ -49,6 +49,37 @@ Note: DNS fix takes effect after 1-2 minutes (client DNS cache must expire).
 - Freedom outbound with DNS forwarding
 - One UUID per user for log distinguishability
 
+
+## Discovery: Path warming — bypassing initial DPI block
+
+When a VPN connection to the server fails to establish, sending a few ICMP
+ping packets from ANY device on the same network (same public IP) immediately
+allows the connection to succeed.
+
+### Mechanism
+
+The TSPU/DPI is a **stateful firewall**. It maintains session tables mapping
+source IP → destination IP. When any traffic (including benign ICMP) traverses
+the TSPU from the client's IP to the server, the DPI creates/refreshes a
+session entry. Subsequent connections (including VPN) from the same source IP
+are then allowed through — the path is "warmed".
+
+```
+Laptop ──ICMP──→ DPI/TSPU ──→ Server    (session created)
+iPhone ──VPN────→ DPI/TSPU ──→ Server    (allowed: session exists)
+```
+
+### Requirements
+
+- Ping must originate from a device **behind the same NAT** (same public IP)
+- Ping must be sent **before or during** VPN connection attempt
+- 5-10 pings (2-3 seconds) is sufficient
+- Pings from the SERVER do NOT help (return path bypasses TSPU)
+
+This technique is known as **"path warming"** or **"session priming"** in the
+anti-censorship community.
+
+
 ## Network path from Russia
 
 Route goes through TSPU/DPI equipment (hop 7, no ICMP response).
