@@ -1,1 +1,0 @@
-vless://00000000-0000-4000-8000-000000000001@198.51.100.50:443?security=reality&sni=www.yahoo.com&fp=chrome&pbk=EXAMPLE_PUBLIC_KEY&sid=EXAMPLE_SHORT_ID&type=tcp&flow=xtls-rprx-vision&encryption=none#Example-443

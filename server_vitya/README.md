@@ -1,25 +1,29 @@
-# Standalone exit server (example: Vitya)
+# Standalone exit server — DPI findings and architecture notes
 
-Direct VLESS exit with Reality — no chaining, freedom outbound only.
+## Key finding: XHTTP + Russian-whitelisted SNI bypasses DPI from foreign IP
 
-## Architecture (sanitized)
+Tested 2026-10-27 from Russian ISP (no VPN), foreign datacenter IP:
 
-| Port | Transport | Target (SNI) | Flow |
-|------|-----------|--------------|------|
-| 443 | TCP + Reality + Vision | www.yahoo.com | `xtls-rprx-vision` |
-| 8443 | TCP + Reality + Vision | www.icloud.com | `xtls-rprx-vision` |
-| 2053 | XHTTP (`/up`, mode auto) + Reality | www.icloud.com | — |
+| Transport | SNI | Result |
+|-----------|-----|--------|
+| TCP + Reality + Vision | foreign (yahoo/icloud) | blocked immediately |
+| XHTTP + Reality | foreign (yahoo) | works briefly (~5 min), then DPI catches it |
+| **XHTTP + Reality** | **Russian whitelist (ozon)** | **works reliably** |
 
-All three inbounds share the same Reality keypair and shortId.
-Outbound: `freedom` (direct exit) + `blackhole` (block).
+**Conclusion:** for a foreign-IP entry point accessible from Russia, BOTH are required:
+1. XHTTP transport (raw TCP is fingerprinted and blocked)
+2. Russian-whitelisted SNI (foreign SNIs get flagged after a few connections)
 
-## Example config structure
+## Architecture
 
-See `xray-config.example.json` for the full sanitized config.
+- VLESS + Reality + XHTTP on port 2053
+- Reality target: Russian whitelisted site (TLS 1.3 + H2 required)
+- Freedom outbound (direct exit, no chaining)
+- One UUID per user for log distinguishability
 
-## Notes
+## Adding a new user
 
-- Vision flow requires client fingerprint to be set (`fp=chrome` recommended)
-- Reality target must support TLS 1.3 + H2
-- Same UUID can be used across all inbounds (single-user per UUID pattern)
-- To add a new user: append UUID to each inbound's `clients` list, restart xray
+1. Generate UUID
+2. Append to `clients` list in the XHTTP inbound
+3. Restart xray
+4. Issue link with the new UUID, same Reality public key and shortId
