@@ -1,0 +1,16 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {"tag": "socks-in", "listen": "127.0.0.1", "port": 10811, "protocol": "socks",
+     "settings": {"auth": "noauth", "udp": true}}
+  ],
+  "outbounds": [
+    {"tag": "proxy", "protocol": "vless",
+     "settings": {"vnext": [{"address": "<relay-ip>", "port": 443,
+       "users": [{"id": "<uuid>", "encryption": "none", "email": "user"}]}]},
+     "streamSettings": {"network": "xhttp", "security": "reality",
+       "xhttpSettings": {"path": "<path>", "mode": "stream-one"},
+       "realitySettings": {"serverName": "<sni>", "fingerprint": "chrome",
+         "publicKey": "<pbk>", "shortId": "<sid>", "spiderX": ""}}}
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "log": {"level": "info", "timestamp": true},
+  "inbounds": [
+    {"type": "tun", "tag": "tun-in", "interface_name": "tun-vless217194",
+      "address": ["172.19.250.1/30"],
+      "mtu": 9000, "auto_route": true, "strict_route": true, "stack": "system"}
+  ],
+  "outbounds": [
+    {"type": "socks", "tag": "xray-socks", "server": "127.0.0.1", "server_port": 10811, "version": "5"},
+    {"type": "direct", "tag": "direct"},
+    {"type": "block", "tag": "block"}
+  ],
+  "route": {
+    "auto_detect_interface": true, "final": "xray-socks",
+    "rules": [
+      {"port": 53, "network": ["tcp","udp"], "action": "hijack-dns"},
+      {"ip_cidr": ["<relay-ip>/32"], "outbound": "direct"}
+    ]
+  },
+  "dns": {
+    "servers": [
+      {"type": "https", "tag": "dns-via-proxy", "server": "8.8.8.8", "detour": "xray-socks",
+        "tls": {"enabled": true, "server_name": "dns.google"}}
+    ],
+    "final": "dns-via-proxy", "strategy": "ipv4_only"
+  }
+}

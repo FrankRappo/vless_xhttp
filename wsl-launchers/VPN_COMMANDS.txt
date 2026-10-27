@@ -37,3 +37,15 @@ sudo /usr/local/bin/openvpn-wsl check
 При запуске другого профиля текущий VPN останавливается автоматически.
 После запуска профиля применяется его kill switch.
 При обычном запуске WSL VPN и kill switch автоматически не включаются.
+
+Через релей 217 (Reality/ozon), выход 194 (fail-closed + watchdog):
+  sudo ./wsl-vpn 217194
+
+Через релей 217 (Reality/ozon), выход 149 (fail-closed + watchdog):
+  sudo ./wsl-vpn 217149
+
+Двойной SSH: WSL → SSH 217 (VLESS) → SSH 104 → 194:
+  sudo ./wsl-vpn 217ssh194
+
+Двойной SSH: WSL → SSH 217 (VLESS) → SSH 104 → 149:
+  sudo ./wsl-vpn 217ssh149
