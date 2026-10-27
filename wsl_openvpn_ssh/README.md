@@ -1,86 +1,118 @@
-# Ручной OpenVPN-over-SSH для WSL
-
-Этот режим запускается только вручную и взаимоисключаем с тремя VLESS-профилями.
+# OpenVPN-over-SSH для WSL — полный запуск, джамп и обход транзитных проблем
 
 Схема:
 
-    WSL OpenVPN -> Windows 8443 -> SSH local forward
-      -> 194:56777 -> OpenVPN 194:443 -> WireGuard -> exit 130
+    WSL (OpenVPN клиент)
+      → 172.x.x.1:8443 (SSH forward на Windows)
+        → plink → SSH jump через relay (порт 22)
+          → exit-сервер (порт 56777)
+            → OpenVPN → WireGuard → exit 130
 
-Холодный старт WSL не включает VPN и не применяет killswitch.
+Exit IP: 130.x.x.x (назначенный)
 
-## Установка
+## Запуск (одна команда с Windows)
 
-1. Установить `openvpn-wsl.example.sh` как `/usr/local/bin/openvpn-wsl`.
-2. Установить `../wsl_178_104_130/wsl-base-boot.example.sh` как
-   `/usr/local/sbin/wsl-base-boot`.
-3. Установить `../wsl_178_104_130/wsl.conf.example` как `/etc/wsl.conf`.
-4. Установить OpenVPN client config как
-   `/etc/openvpn/client/194_130wsl-over-ssh.conf`.
-5. Хранить приватный SSH-ключ вне репозитория и заменить примерный RemoteHost
-   в PowerShell launcher либо передать его параметром `-RemoteHost`.
-6. Не устанавливать удалённые boot/cron launchers VLESS.
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Desktop\start-openvpn-ssh.ps1"
+```
 
-PowerShell launcher при каждом запуске подставляет текущий WSL gateway в
-директиву `remote` OpenVPN config и привязывает SSH-forward непосредственно к
-этому адресу. `netsh portproxy` не используется, поэтому права администратора
-Windows не требуются. Схема сохраняет работу после `wsl --shutdown`, даже если
-адрес WSL NAT изменился.
+Требования: WSL запущен (любая команда `wsl -d <distro> -- echo ok` стартует его).
+Права администратора Windows НЕ требуются.
 
-## Ручной запуск
+Что делает лаунчер:
+1. Определяет IP шлюза WSL
+2. Поднимает SSH forward через plink → relay → exit (3 попытки по 30 сек)
+3. Запускает в WSL `openvpn-wsl start` (OpenVPN + killswitch + watchdog)
+4. Запускает Windows-watchdog (следит за SSH forward)
 
-Из обычного PowerShell без прав администратора:
+Успешный результат:
+```
+HEALTHY profile=openvpn-ssh-194-130 exit=130.x.x.x fail_closed=yes
+OpenVPN over SSH is healthy; watchdog PID <pid>
+```
 
-    .\start-openvpn-ssh.example.ps1 -RemoteHost 192.0.2.194
+## Остановка
 
-Проверка в WSL:
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Desktop\stop-openvpn-ssh.ps1"
+```
 
-    sudo openvpn-wsl status
-    sudo openvpn-wsl check
+## SSH Jump конфигурация
 
-Остановка и возврат обычного firewall:
+Файл: `~/.ssh/config_jump` на Windows
 
-    sudo openvpn-wsl stop
+```
+Host exitjump
+    HostName <exit-server-ip>
+    Port 56777
+    User root
+    IdentityFile ~/.ssh/jump_key
+    ProxyCommand "plink.exe" -ssh -batch -pw <relay-password> -nc %h:%p root@<relay-ip>
+```
 
-Linux wrapper останавливает все VLESS TUN, применяет отдельный OpenVPN fail-closed ruleset, запускает OpenVPN, проверяет exit и доказывает блокировку прямого eth0.
+Компоненты:
+- **plink** (PuTTY) — устанавливает SSH к relay-серверу
+- **relay-сервер** — промежуточный узел (обход DPI на прямом SSH)
+- **jump_key** — SSH-ключ для exit-сервера (не пароль)
+- **-nc %h:%p** — прозрачный forward к exit-серверу
 
-Переход на VLESS выполняется только одной из команд:
+## ⚠️ Проблема транзитного провайдера (RETN)
 
-    sudo vless-wsl use 104-130
-    sudo vless-wsl use 178-104-130
-    sudo vless-wsl use 104-130-over-ssh
+Обнаружено: маршрут relay → exit может рваться на транзитном провайдере RETN.
 
-Команда VLESS сначала останавливает OpenVPN, затем соответствующий launcher применяет свой killswitch.
+Симптомы:
+- Ping проходит (ICMP идёт по другому пути)
+- TCP открывается (SYN доходит)
+- SSH handshake висит (обратные пакеты теряются на RETN)
 
-## Автовосстановление без ослабления kill switch
+Диагностика:
+```bash
+# С relay-сервера:
+traceroute -n <exit-ip>
+# Если маршрут умирает после 87.245.x.x (RETN) — проблема подтверждена
+```
 
-После ручного запуска PowerShell launcher создаёт скрытый watchdog и передаёт
-ему уже открытый SSH-forward. Watchdog:
+Решение: сменить джамп-хост с relay на другой входной сервер,
+у которого другой транзитный провайдер (например GTT).
 
-- следит за процессом SSH и здоровьем OpenVPN;
-- проверяет внешний IP без обращения к DNS, чтобы временная задержка
-  резолвера не вызывала цикл перезапусков;
-- перезапускает OpenVPN только после двух последовательных неудачных
-  проверок; завершение SSH-процесса обрабатывается немедленно;
-- при обрыве заново создаёт SSH-forward и выполняет команду
-  openvpn-wsl recover;
-- перед любым перезапуском повторно применяет fail-closed ruleset;
-- никогда не вызывает openvpn-wsl stop и не очищает firewall;
-- завершается, если профиль вручную отключён или дистрибутив WSL остановлен.
+## Killswitch (fail-closed)
 
-Ручное разрешение хранится только в /run/openvpn-wsl.enabled. Поэтому после
-wsl --shutdown оно исчезает: холодный старт WSL не запускает VPN или
-watchdog. Команда openvpn-wsl start создаёт разрешение, openvpn-wsl stop
-удаляет его. Внутренний recover отказывается запускаться без этого файла.
+После запуска профиля применяется killswitch:
+- `iptables -P OUTPUT DROP` — всё закрыто по умолчанию
+- Разрешены только: `lo`, `tun+` (VPN), SSH forward порт
+- Если туннель умирает — интернет в WSL полностью блокируется (защита от утечек)
 
-Установить openvpn-ssh-watchdog.example.ps1 рядом с Windows launcher и
-передать его через -WatchdogPath, либо переименовать под локальный launcher.
-Для полной остановки использовать stop-openvpn-ssh.example.ps1: он сначала
-останавливает watchdog/SSH, затем отключает OpenVPN и возвращает обычный
-firewall.
+## Watchdog
 
-WSL-команда ../wsl-launchers/start-openvpn-194-130.sh вызывает установленный
-на рабочем столе Windows launcher Run_VPN_Tunnel_new.ps1, поэтому включает и
-SSH-forward и watchdog. Скрипты Windows работают без прав администратора.
+- **WSL-side** (`openvpn-wsl-watchdog`): каждые 15 сек проверяет процессы + TUN + probe данных
+- **Windows-side** (`OpenVPN_SSH_Watchdog.ps1`): следит за SSH forward, пересоздаёт при обрыве
 
-Результат контролируемого failover-теста описан в FAILOVER_TEST.md.
+## DNS на exit-сервере
+
+Для работы TUN-клиентов на exit-сервере нужен DNS-форвардинг:
+
+```json
+"dns": {
+    "servers": [
+        {"address": "1.1.1.1"},
+        {"address": "8.8.8.8"}
+    ],
+    "queryStrategy": "UseIPv4"
+}
+```
+
+И freedom outbound с `domainStrategy: "UseIPv4"`.
+
+## Аварийное отключение killswitch
+
+```bash
+sudo iptables -F && sudo iptables -X
+sudo iptables -P INPUT ACCEPT && sudo iptables -P FORWARD ACCEPT && sudo iptables -P OUTPUT ACCEPT
+```
+
+## Известные проблемы
+
+1. **Stream-one mode** умирает через ~20 сек — использовать packet-up
+2. **Чужие SNI** (yahoo, icloud) блокируются ТСПУ через ~5 мин — использовать ру-белые
+3. **RETN транзит** может рвать SSH между серверами — мониторить traceroute'ом
+4. **Первое подключение** может не пройти — см. path warming (прогрев пути)
