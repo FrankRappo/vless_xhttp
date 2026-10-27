@@ -76,6 +76,21 @@ iPhone ──VPN────→ DPI/TSPU ──→ Server    (allowed: session e
 - 5-10 pings (2-3 seconds) is sufficient
 - Pings from the SERVER do NOT help (return path bypasses TSPU)
 
+
+### Three levels of TSPU blocking — when path warming works
+
+| Level | Behavior | Path warming | Status |
+|-------|----------|:------------:|:------:|
+| **1. DPI analysis** | TCP passes, filter checks traffic patterns | ✅ works | current |
+| **2. Throttling** | Connection passes, speed reduced | ⚠️ partial | — |
+| **3. Full IP block** | TCP SYN dropped, ping fails | ❌ useless | — |
+
+**Quick check:** `ping -c 10 <server-ip>`
+- 10/10 replies at normal latency → level 1, path warming works
+- Replies but slow (>200ms) → level 2
+- 0/10 → level 3, IP fully blocked, need new IP or relay
+
+
 This technique is known as **"path warming"** or **"session priming"** in the
 anti-censorship community.
 
