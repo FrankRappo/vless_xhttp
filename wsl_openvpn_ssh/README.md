@@ -1,118 +1,146 @@
-# OpenVPN-over-SSH для WSL — полный запуск, джамп и обход транзитных проблем
+# OpenVPN-over-SSH: WSL → Windows → SSH → 194 → 130
 
-Схема:
+Апрельская версия, воспроизведённая и задокументированная 27.10.2026.
 
-    WSL (OpenVPN клиент)
-      → 172.x.x.1:8443 (SSH forward на Windows)
-        → plink → SSH jump через relay (порт 22)
-          → exit-сервер (порт 56777)
-            → OpenVPN → WireGuard → exit 130
+## Схема
 
-Exit IP: 130.x.x.x (назначенный)
+```
+WSL (OpenVPN клиент)
+  → 172.x.x.1:8443 (portproxy на Windows)
+    → 127.0.0.1:8443 (plink local forward)
+      → SSH → exit-server:56777
+        → OpenVPN server на :443
+          → WireGuard → 130 → интернет
+```
 
-## Запуск (одна команда с Windows)
+Exit IP: 130.x.x.x
+
+## Компоненты
+
+| Компонент | Где | Назначение |
+|-----------|-----|------------|
+| `start-tunnel.ps1` | Desktop | Запуск всей цепочки (portproxy + plink) |
+| `stop-tunnel.ps1` | Desktop | Остановка + восстановление |
+| `tunnel.conf` | /etc/openvpn/client/ | Конфиг OpenVPN клиента |
+| `killswitch` | /usr/local/bin/ | Fail-closed firewall для WSL |
+| `plink.exe` | PuTTY | SSH-транспорт (Windows) |
+| `portproxy` | netsh | Проброс WSL→Windows (требует админа) |
+
+## Запуск
+
+### Шаг 1: Windows (от администратора)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Desktop\start-openvpn-ssh.ps1"
+# Можно сохранить как start-tunnel.ps1 и запускать двойным кликом
+$wslIp = (wsl.exe -d Ubuntu-24.04 -e sh -c "ip route show | grep default | awk '{print `$3}'").Trim()
+if (-not $wslIp) { Write-Host "WSL не отвечает!"; exit }
+
+# Portproxy: WSL gateway → Windows localhost
+netsh interface portproxy reset
+netsh interface portproxy add v4tov4 listenport=8443 listenaddress=$wslIp connectport=8443 connectaddress=127.0.0.1
+
+# Обновить IP в конфиге WSL
+$configPath = "\wsl.localhost\Ubuntu-24.04\etc\openvpn\client\tunnel.conf"
+$content = Get-Content $configPath
+$content = $content -replace "remote \d+\.\d+\.\d+\.\d+ 8443", "remote $wslIp 8443"
+$content = $content -replace "route \d+\.\d+\.\d+\.\d+ 255\.255\.255\.255", "route $wslIp 255.255.255.255"
+$content | Set-Content $configPath -Encoding Ascii
+
+# Запустить plink SSH туннель
+$plinkArgs = "-ssh -2 -P 56777 -N -l root -pw <password> -L 127.0.0.1:8443:127.0.0.1:443 <exit-server-ip>"
+Start-Process "C:\Program Files\PuTTY\plink.exe" -ArgumentList $plinkArgs
 ```
 
-Требования: WSL запущен (любая команда `wsl -d <distro> -- echo ok` стартует его).
-Права администратора Windows НЕ требуются.
+### Шаг 2: WSL (в терминале)
 
-Что делает лаунчер:
-1. Определяет IP шлюза WSL
-2. Поднимает SSH forward через plink → relay → exit (3 попытки по 30 сек)
-3. Запускает в WSL `openvpn-wsl start` (OpenVPN + killswitch + watchdog)
-4. Запускает Windows-watchdog (следит за SSH forward)
+```bash
+# Включить killswitch
+sudo /usr/local/bin/killswitch
 
-Успешный результат:
+# Запустить OpenVPN
+sudo openvpn --config /etc/openvpn/client/tunnel.conf
 ```
-HEALTHY profile=openvpn-ssh-194-130 exit=130.x.x.x fail_closed=yes
-OpenVPN over SSH is healthy; watchdog PID <pid>
+
+### Шаг 3: Проверка
+
+```bash
+curl -4 ifconfig.me        # → 130.x.x.x
+ip route get 1.1.1.1       # → via tun0
 ```
 
 ## Остановка
 
-```powershell
-powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Desktop\stop-openvpn-ssh.ps1"
-```
-
-## SSH Jump конфигурация
-
-Файл: `~/.ssh/config_jump` на Windows
-
-```
-Host exitjump
-    HostName <exit-server-ip>
-    Port 56777
-    User root
-    IdentityFile ~/.ssh/jump_key
-    ProxyCommand "plink.exe" -ssh -batch -pw <relay-password> -nc %h:%p root@<relay-ip>
-```
-
-Компоненты:
-- **plink** (PuTTY) — устанавливает SSH к relay-серверу
-- **relay-сервер** — промежуточный узел (обход DPI на прямом SSH)
-- **jump_key** — SSH-ключ для exit-сервера (не пароль)
-- **-nc %h:%p** — прозрачный forward к exit-серверу
-
-## ⚠️ Проблема транзитного провайдера (RETN)
-
-Обнаружено: маршрут relay → exit может рваться на транзитном провайдере RETN.
-
-Симптомы:
-- Ping проходит (ICMP идёт по другому пути)
-- TCP открывается (SYN доходит)
-- SSH handshake висит (обратные пакеты теряются на RETN)
-
-Диагностика:
 ```bash
-# С relay-сервера:
-traceroute -n <exit-ip>
-# Если маршрут умирает после 87.245.x.x (RETN) — проблема подтверждена
+# В WSL — восстановить сеть
+sudo iptables -F && sudo iptables -X
+sudo iptables -P INPUT ACCEPT && sudo iptables -P FORWARD ACCEPT && sudo iptables -P OUTPUT ACCEPT
+
+# Остановить OpenVPN (Ctrl+C или)
+sudo pkill openvpn
 ```
 
-Решение: сменить джамп-хост с relay на другой входной сервер,
-у которого другой транзитный провайдер (например GTT).
+```powershell
+# В Windows (от админа) — убрать portproxy
+netsh interface portproxy reset
+```
 
 ## Killswitch (fail-closed)
 
-После запуска профиля применяется killswitch:
-- `iptables -P OUTPUT DROP` — всё закрыто по умолчанию
-- Разрешены только: `lo`, `tun+` (VPN), SSH forward порт
-- Если туннель умирает — интернет в WSL полностью блокируется (защита от утечек)
-
-## Watchdog
-
-- **WSL-side** (`openvpn-wsl-watchdog`): каждые 15 сек проверяет процессы + TUN + probe данных
-- **Windows-side** (`OpenVPN_SSH_Watchdog.ps1`): следит за SSH forward, пересоздаёт при обрыве
-
-## DNS на exit-сервере
-
-Для работы TUN-клиентов на exit-сервере нужен DNS-форвардинг:
-
-```json
-"dns": {
-    "servers": [
-        {"address": "1.1.1.1"},
-        {"address": "8.8.8.8"}
-    ],
-    "queryStrategy": "UseIPv4"
-}
-```
-
-И freedom outbound с `domainStrategy: "UseIPv4"`.
-
-## Аварийное отключение killswitch
+Скрипт: `/usr/local/bin/killswitch`
 
 ```bash
-sudo iptables -F && sudo iptables -X
-sudo iptables -P INPUT ACCEPT && sudo iptables -P FORWARD ACCEPT && sudo iptables -P OUTPUT ACCEPT
+#!/bin/bash
+# Вся политика DROP — ничего не проходит без VPN
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A INPUT -i tun+ -j ACCEPT          # VPN туннель
+iptables -A OUTPUT -o tun+ -j ACCEPT         # VPN туннель
+iptables -A OUTPUT -d 172.16.0.0/12 -p tcp --dport 8443 -j ACCEPT  # SSH forward
+iptables -A INPUT -s 172.16.0.0/12 -p tcp --sport 8443 -j ACCEPT
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 ```
+
+Поведение:
+- Туннель упал → интернет в WSL полностью блокируется (защита от утечек)
+- Никакой трафик не уходит мимо VPN
+- Аварийное отключение — команды из раздела "Остановка"
+
+## Конфиг OpenVPN (tunnel.conf)
+
+```
+client
+proto tcp-client
+remote <wsl-gateway-ip> 8443
+dev tun
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+auth SHA256
+cipher AES-128-GCM
+tls-client
+tls-version-min 1.2
+
+route <wsl-gateway-ip> 255.255.255.255 net_gateway
+
+# Секретные блоки (ca, cert, key, tls-crypt) хранить отдельно
+```
+
+## Требования
+
+1. **Windows: права администратора** — для netsh portproxy
+2. **WSL: запущен** — любая wsl-команда стартует его
+3. **PuTTY (plink.exe)** — установлен
+4. **OpenVPN** — установлен в WSL
+5. **Порт 56777 на exit-сервере** — открыт для вашего IP
 
 ## Известные проблемы
 
-1. **Stream-one mode** умирает через ~20 сек — использовать packet-up
-2. **Чужие SNI** (yahoo, icloud) блокируются ТСПУ через ~5 мин — использовать ру-белые
-3. **RETN транзит** может рвать SSH между серверами — мониторить traceroute'ом
-4. **Первое подключение** может не пройти — см. path warming (прогрев пути)
+- Порт 56777 на exit-сервере может быть закрыт фаерволом — нужно открывать для IP клиента
+- IP клиента может быть динамическим — при смене нужно обновлять правило фаервола
+- При блокировке порта см. альтернативу: SSH-jump через промежуточный сервер
